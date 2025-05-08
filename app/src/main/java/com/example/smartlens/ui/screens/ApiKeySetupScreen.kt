@@ -1,12 +1,11 @@
 package com.example.smartlens.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +21,7 @@ import androidx.navigation.NavController
 import com.example.smartlens.R
 import com.example.smartlens.ui.navigation.Screen
 import com.example.smartlens.viewmodel.SettingsViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,16 +30,19 @@ fun ApiKeySetupScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
-    // Estado local para el input de la API Key (no usamos collectAsState)
-    var apiKeyInput by remember { mutableStateOf(viewModel.apiKey) }
+    // Estado local para el input de la API Key
+    // Obtenemos el valor de apiKey como String
+    val apiKey by viewModel.apiKey.collectAsState()
+    var apiKeyInput by remember { mutableStateOf(apiKey) }
     var showApiKey by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var showError by remember { mutableStateOf(false) }
 
     // Verificamos si ya hay una API Key configurada
     LaunchedEffect(Unit) {
-        if (viewModel.apiKey.isNotBlank()) {
+        if (apiKey.isNotEmpty()) {
             // Si ya hay una API Key, navegar directamente a la pantalla principal
             navController.navigate(Screen.Home.route) {
                 popUpTo(0)
@@ -138,17 +141,21 @@ fun ApiKeySetupScreen(
             // Botón de continuar
             Button(
                 onClick = {
-                    if (apiKeyInput.isNotBlank()) {
+                    if (apiKeyInput.isNotEmpty()) {
                         isLoading = true
-                        viewModel.saveApiKey(apiKeyInput)
-                        navController.navigate(Screen.Home.route) {
-                            popUpTo(0)
+                        scope.launch {
+                            viewModel.saveApiKey(apiKeyInput)
+                            // Mostrar un Toast aquí en lugar de directamente desde el onClick
+                            Toast.makeText(context, "API Key guardada correctamente", Toast.LENGTH_SHORT).show()
+                            navController.navigate(Screen.Home.route) {
+                                popUpTo(0)
+                            }
                         }
                     } else {
                         showError = true
                     }
                 },
-                enabled = !isLoading && apiKeyInput.isNotBlank(),
+                enabled = !isLoading && apiKeyInput.isNotEmpty(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp)

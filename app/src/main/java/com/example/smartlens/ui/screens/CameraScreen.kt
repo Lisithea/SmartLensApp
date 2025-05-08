@@ -2,11 +2,9 @@ package com.example.smartlens.ui.screens
 
 import android.Manifest
 import android.content.ContentValues
-import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -37,16 +35,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.example.smartlens.R
 import com.example.smartlens.ui.components.LocalSnackbarManager
 import com.example.smartlens.ui.navigation.Screen
 import com.example.smartlens.viewmodel.DocumentViewModel
 import java.text.SimpleDateFormat
 import java.util.*
-import java.util.concurrent.Executor
-import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,17 +51,32 @@ fun CameraScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val snackbarManager = LocalSnackbarManager.current
-    val TAG = "CameraScreen"
 
     var hasCameraPermission by remember { mutableStateOf(false) }
     var hasStoragePermission by remember { mutableStateOf(false) }
+
+    // Estado para mostrar mensajes de error y éxito
+    var lastMessage by remember { mutableStateOf<String?>(null) }
+    var isError by remember { mutableStateOf(false) }
+
+    LaunchedEffect(lastMessage) {
+        if (lastMessage != null) {
+            if (isError) {
+                snackbarManager?.showError(lastMessage ?: "")
+            } else {
+                snackbarManager?.showInfo(lastMessage ?: "")
+            }
+            lastMessage = null
+        }
+    }
 
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { granted ->
             hasCameraPermission = granted
             if (!granted) {
-                snackbarManager?.showError("Se requiere permiso de cámara para escanear documentos")
+                lastMessage = context.getString(R.string.camera_permission_required)
+                isError = true
             }
         }
     )
@@ -77,7 +86,8 @@ fun CameraScreen(
         onResult = { granted ->
             hasStoragePermission = granted
             if (!granted) {
-                snackbarManager?.showError("Se requiere permiso de almacenamiento para guardar documentos")
+                lastMessage = context.getString(R.string.storage_permission_required)
+                isError = true
             }
         }
     )
@@ -87,15 +97,27 @@ fun CameraScreen(
     ) { uri ->
         uri?.let {
             try {
-                Log.d(TAG, "Imagen seleccionada de galería: $uri")
-                // Mostrar un mensaje de carga
-                snackbarManager?.showInfo("Procesando imagen...")
-                // Guardar la imagen temporal y navegar
+                Log.d("CameraScreen", "Imagen seleccionada de galería: $uri")
+                lastMessage = "Procesando imagen..."
+                isError = false
+
+                // Guardar la imagen temporal
+                viewModel.resetState() // Reset any previous state
                 val tempUri = viewModel.saveTemporaryImage(it)
-                navigateToDocumentType(navController, tempUri.toString())
+
+                // Navegar solo si el URI es válido
+                if (tempUri != Uri.EMPTY) {
+                    lastMessage = "Imagen cargada correctamente"
+                    isError = false
+                    navigateToDocumentType(navController, tempUri.toString())
+                } else {
+                    lastMessage = "Error al procesar la imagen"
+                    isError = true
+                }
             } catch (e: Exception) {
-                Log.e(TAG, "Error al seleccionar imagen: ${e.message}", e)
-                snackbarManager?.showError("Error al seleccionar imagen: ${e.message}")
+                Log.e("CameraScreen", "Error al seleccionar imagen: ${e.message}", e)
+                lastMessage = "Error al seleccionar imagen: ${e.message}"
+                isError = true
             }
         }
     }
@@ -199,18 +221,20 @@ fun CameraScreen(
                                     }
 
                                 } catch (e: Exception) {
-                                    Log.e(TAG, "Error al vincular casos de uso de cámara: ${e.message}", e)
+                                    Log.e("CameraScreen", "Error al vincular casos de uso de cámara: ${e.message}", e)
                                     if (debugMode) {
                                         debugInfo = "Error al inicializar cámara: ${e.message}"
                                     }
-                                    snackbarManager?.showError("Error al inicializar la cámara: ${e.localizedMessage}")
+                                    lastMessage = "Error al inicializar la cámara: ${e.localizedMessage}"
+                                    isError = true
                                 }
                             } catch (e: Exception) {
-                                Log.e(TAG, "Error al obtener proveedor de cámara: ${e.message}", e)
+                                Log.e("CameraScreen", "Error al obtener proveedor de cámara: ${e.message}", e)
                                 if (debugMode) {
                                     debugInfo = "Error al obtener proveedor de cámara: ${e.message}"
                                 }
-                                snackbarManager?.showError("Error al obtener el proveedor de cámara: ${e.localizedMessage}")
+                                lastMessage = "Error al obtener el proveedor de cámara: ${e.localizedMessage}"
+                                isError = true
                             }
                         }, executor)
 
@@ -269,7 +293,10 @@ fun CameraScreen(
                     ) {
                         // Botón para abrir galería
                         FilledTonalIconButton(
-                            onClick = { galleryLauncher.launch("image/*") },
+                            onClick = {
+                                viewModel.resetState() // Reset any previous state
+                                galleryLauncher.launch("image/*")
+                            },
                             modifier = Modifier.size(56.dp)
                         ) {
                             Icon(
@@ -290,28 +317,90 @@ fun CameraScreen(
                             IconButton(
                                 onClick = {
                                     if (!isTakingPicture) {
+                                        viewModel.resetState() // Reset any previous state
                                         isTakingPicture = true
-                                        takePicture(
-                                            context = context,
-                                            viewModel = viewModel,
-                                            imageCapture = imageCapture,
-                                            executor = executor,
-                                            onImageCaptured = { uri ->
-                                                isTakingPicture = false
-                                                if (debugMode) {
-                                                    debugInfo = "Imagen capturada: $uri"
+                                        lastMessage = "Capturando imagen..."
+                                        isError = false
+
+                                        val takePictureCallback = object : ImageCapture.OnImageSavedCallback {
+                                            override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                                                val savedUri = outputFileResults.savedUri
+                                                if (savedUri != null) {
+                                                    Log.d("CameraScreen", "Imagen guardada en: $savedUri")
+                                                    try {
+                                                        val tempUri = viewModel.saveTemporaryImage(savedUri)
+                                                        Log.d("CameraScreen", "Copia guardada en: $tempUri")
+                                                        isTakingPicture = false
+                                                        if (debugMode) {
+                                                            debugInfo = "Imagen capturada: $tempUri"
+                                                        }
+
+                                                        // Actualizar mensaje
+                                                        lastMessage = "Imagen capturada correctamente"
+                                                        isError = false
+
+                                                        // Navegar
+                                                        navigateToDocumentType(navController, tempUri.toString())
+                                                    } catch (e: Exception) {
+                                                        isTakingPicture = false
+                                                        Log.e("CameraScreen", "Error al guardar copia", e)
+
+                                                        // Actualizar mensaje
+                                                        lastMessage = "Error al guardar copia: ${e.message}"
+                                                        isError = true
+                                                    }
+                                                } else {
+                                                    isTakingPicture = false
+                                                    Log.e("CameraScreen", "URI nula al guardar imagen")
+
+                                                    // Actualizar mensaje
+                                                    lastMessage = "Error: no se pudo obtener URI de imagen"
+                                                    isError = true
                                                 }
-                                                navigateToDocumentType(navController, uri.toString())
-                                            },
-                                            onError = { exception ->
-                                                isTakingPicture = false
-                                                if (debugMode) {
-                                                    debugInfo = "Error al capturar: ${exception.message}"
-                                                }
-                                                Log.e(TAG, "Error al capturar imagen: ${exception.message}", exception)
-                                                snackbarManager?.showError("Error al capturar imagen: ${exception.localizedMessage}")
                                             }
-                                        )
+
+                                            override fun onError(exception: ImageCaptureException) {
+                                                isTakingPicture = false
+                                                Log.e("CameraScreen", "Error en captura", exception)
+
+                                                // Actualizar mensaje
+                                                lastMessage = "Error al capturar: ${exception.message ?: "Error desconocido"}"
+                                                isError = true
+                                            }
+                                        }
+
+                                        // Crear un ContentValues para los metadatos de la imagen
+                                        val contentValues = ContentValues().apply {
+                                            val timestamp = SimpleDateFormat(
+                                                "yyyyMMdd_HHmmss",
+                                                Locale.getDefault()
+                                            ).format(Date())
+                                            put(MediaStore.MediaColumns.DISPLAY_NAME, "SmartLens_$timestamp")
+                                            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                                        }
+
+                                        // Configurar las opciones de salida
+                                        val outputOptions = ImageCapture.OutputFileOptions.Builder(
+                                            context.contentResolver,
+                                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                            contentValues
+                                        ).build()
+
+                                        // Tomar la foto
+                                        try {
+                                            imageCapture.takePicture(
+                                                outputOptions,
+                                                executor,
+                                                takePictureCallback
+                                            )
+                                        } catch (e: Exception) {
+                                            isTakingPicture = false
+                                            Log.e("CameraScreen", "Error al iniciar captura", e)
+
+                                            // Actualizar mensaje
+                                            lastMessage = "Error al iniciar captura: ${e.message}"
+                                            isError = true
+                                        }
                                     }
                                 },
                                 modifier = Modifier
@@ -446,68 +535,10 @@ private fun navigateToDocumentType(navController: NavController, uriString: Stri
     try {
         Log.d("CameraScreen", "Navegando a DocumentType con URI: $uriString")
         navController.navigate("${Screen.DocumentType.route}/$uriString") {
-            popUpTo(navController.graph.findStartDestination().id)
+            // Reemplazando con una navegación más simple
+            launchSingleTop = true
         }
     } catch (e: Exception) {
         Log.e("CameraScreen", "Error al navegar: ${e.message}", e)
-    }
-}
-
-private fun takePicture(
-    context: Context,
-    viewModel: DocumentViewModel,
-    imageCapture: ImageCapture,
-    executor: Executor,
-    onImageCaptured: (Uri) -> Unit,
-    onError: (ImageCaptureException) -> Unit
-) {
-    try {
-        // Crear un nombre único para la imagen
-        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, "SmartLens_$timestamp")
-            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-        }
-
-        // Configurar opciones de salida utilizando ContentResolver
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(
-            context.contentResolver,
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            contentValues
-        ).build()
-
-        Log.d("CameraScreen", "Iniciando captura de imagen")
-
-        // Capturar la imagen con alta calidad
-        imageCapture.takePicture(
-            outputOptions,
-            executor,
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                    outputFileResults.savedUri?.let { uri ->
-                        Log.d("CameraScreen", "Imagen guardada en: $uri")
-                        // Guardar una copia en el directorio de la aplicación
-                        try {
-                            val tempUri = viewModel.saveTemporaryImage(uri)
-                            Log.d("CameraScreen", "Copia guardada en: $tempUri")
-                            onImageCaptured(tempUri)
-                        } catch (e: Exception) {
-                            Log.e("CameraScreen", "Error al guardar copia temporal: ${e.message}", e)
-                            onImageCaptured(uri)
-                        }
-                    } ?: run {
-                        onError(ImageCaptureException(0, "URI nula al guardar imagen", null))
-                    }
-                }
-
-                override fun onError(exception: ImageCaptureException) {
-                    Log.e("CameraScreen", "Error en callback de imagen: ${exception.message}", exception)
-                    onError(exception)
-                }
-            }
-        )
-    } catch (e: Exception) {
-        Log.e("CameraScreen", "Error al tomar imagen: ${e.message}", e)
-        onError(ImageCaptureException(0, "Error al tomar imagen: ${e.localizedMessage}", e))
     }
 }

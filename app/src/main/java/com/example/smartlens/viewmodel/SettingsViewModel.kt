@@ -3,6 +3,7 @@ package com.example.smartlens.viewmodel
 import android.app.Activity
 import android.content.Context
 import android.util.Log
+import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.smartlens.service.GeminiService
@@ -10,6 +11,8 @@ import com.example.smartlens.util.LanguageHelper
 import com.example.smartlens.util.ThemeManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -19,46 +22,58 @@ class SettingsViewModel @Inject constructor(
     private val geminiService: GeminiService
 ) : ViewModel() {
 
-    // Acceso directo a los valores en lugar de StateFlow
-    val apiKey: String
-        get() = preferences.getString("api_key", "") ?: ""
+    // Estado para la API Key
+    private val _apiKey = MutableStateFlow("")
+    val apiKey: StateFlow<String> = _apiKey
 
-    val selectedLanguage: String
-        get() = preferences.getString("selected_language", "español") ?: "español"
+    // Estado para el idioma seleccionado
+    private val _selectedLanguage = MutableStateFlow("")
+    val selectedLanguage: StateFlow<String> = _selectedLanguage
 
-    // Usa ThemeManager para acceder al modo oscuro
-    val isDarkTheme: Boolean
-        get() = ThemeManager.isDarkMode.value
-
-    private val preferences = context.getSharedPreferences("smartlens_settings", Context.MODE_PRIVATE)
+    // Estado para el tema oscuro
+    private val _isDarkTheme = MutableStateFlow(false)
+    val isDarkTheme: StateFlow<Boolean> = _isDarkTheme
 
     // Bandera para saber si se cambió el idioma
     private var languageChanged = false
 
+    private val preferences = context.getSharedPreferences("smartlens_settings", Context.MODE_PRIVATE)
+
     init {
         // Inicializar ThemeManager
         ThemeManager.init(context)
-        Log.d("SettingsViewModel", "API Key: $apiKey, Language: $selectedLanguage, Dark Theme: $isDarkTheme")
+
+        // Cargar valores iniciales
+        _apiKey.value = preferences.getString("api_key", "") ?: ""
+        _selectedLanguage.value = preferences.getString("selected_language", "español") ?: "español"
+        _isDarkTheme.value = ThemeManager.isDarkMode.value
+
+        Log.d("SettingsViewModel", "API Key: ${_apiKey.value}, Language: ${_selectedLanguage.value}, Dark Theme: ${_isDarkTheme.value}")
     }
 
     fun saveApiKey(key: String) {
         viewModelScope.launch {
             preferences.edit().putString("api_key", key).apply()
             geminiService.saveApiKey(key)
+            _apiKey.value = key
             Log.d("SettingsViewModel", "Saved API Key: $key")
         }
     }
 
     fun saveLanguage(language: String) {
         viewModelScope.launch {
-            if (selectedLanguage != language) {
+            if (_selectedLanguage.value != language) {
                 preferences.edit().putString("selected_language", language).apply()
+                _selectedLanguage.value = language
 
                 // Marcar que se cambió el idioma
                 languageChanged = true
 
                 // Aplicar el cambio de idioma inmediatamente
-                LanguageHelper.updateLanguage(context, language)
+                val updatedContext = LanguageHelper.updateLanguage(context, language)
+
+                // Mostrar un Toast para indicar que se cambió el idioma
+                Toast.makeText(updatedContext, "Idioma cambiado a $language", Toast.LENGTH_SHORT).show()
 
                 // Si el contexto es una actividad, recrearla para aplicar el cambio completamente
                 if (context is Activity) {
@@ -75,6 +90,7 @@ class SettingsViewModel @Inject constructor(
     fun toggleTheme() {
         // Usar ThemeManager para cambiar el tema
         val newTheme = ThemeManager.toggleDarkMode(context)
+        _isDarkTheme.value = newTheme
         Log.d("SettingsViewModel", "Theme toggled to dark: $newTheme")
     }
 

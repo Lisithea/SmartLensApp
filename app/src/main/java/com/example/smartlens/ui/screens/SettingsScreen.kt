@@ -26,6 +26,7 @@ import com.example.smartlens.ui.navigation.Screen
 import com.example.smartlens.util.ThemeManager
 import com.example.smartlens.viewmodel.LoginViewModel
 import com.example.smartlens.viewmodel.SettingsViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,41 +39,28 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val snackbarManager = LocalSnackbarManager.current
+    val scope = rememberCoroutineScope()
 
-    // Usamos un estado local que se actualiza con LaunchedEffect para evitar problemas con collectAsState
-    var isDarkTheme by remember { mutableStateOf(false) }
-    var userName by remember { mutableStateOf(userProfileManager.getUserName()) }
-    var userEmail by remember { mutableStateOf(userProfileManager.getEmail()) }
-    var quotesEnabled by remember { mutableStateOf(motivationalQuotesService.getQuotesEnabled()) }
+    // Estados de UI
+    val apiKey by viewModel.apiKey.collectAsState()
+    val selectedLanguage by viewModel.selectedLanguage.collectAsState()
+    val isDarkTheme by viewModel.isDarkTheme.collectAsState()
+    val quotesEnabled by motivationalQuotesService.quotesEnabled.collectAsState()
 
-    // Actualizar el estado al iniciar el componente
-    LaunchedEffect(Unit) {
-        isDarkTheme = viewModel.isDarkTheme
-    }
-
-    // Observador para cambios en el tema
-    DisposableEffect(Unit) {
-        val observer = { newValue: Boolean ->
-            isDarkTheme = newValue
-        }
-
-        // Registramos un observador para el tema
-        ThemeManager.addObserver(observer)
-
-        onDispose {
-            // Limpiamos el observador
-            ThemeManager.removeObserver(observer)
-        }
-    }
-
-    // Estados para la UI
-    var apiKeyInput by remember { mutableStateOf(viewModel.apiKey) }
+    // Estado local para visualización
+    var apiKeyInput by remember { mutableStateOf(apiKey) }
     var showApiKey by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
-    var selectedLanguage by remember { mutableStateOf(viewModel.selectedLanguage) }
+    var userName by remember { mutableStateOf(userProfileManager.getUserName()) }
+    var userEmail by remember { mutableStateOf(userProfileManager.getEmail()) }
 
     // Estado para confirmar cierre de sesión
     var showLogoutDialog by remember { mutableStateOf(false) }
+
+    // Sincronizar apiKeyInput cuando cambia apiKey
+    LaunchedEffect(apiKey) {
+        apiKeyInput = apiKey
+    }
 
     Scaffold(
         topBar = {
@@ -81,7 +69,11 @@ fun SettingsScreen(
                 actions = {
                     // Botón de cerrar sesión
                     IconButton(onClick = { showLogoutDialog = true }) {
-                        Icon(Icons.Default.Logout, contentDescription = "Cerrar sesión")
+                        Icon(
+                            imageVector = Icons.Default.Logout,
+                            contentDescription = "Cerrar sesión",
+                            tint = MaterialTheme.colorScheme.error
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -131,6 +123,7 @@ fun SettingsScreen(
                     userProfileManager.saveUserName(userName)
                     userProfileManager.saveEmail(userEmail)
                     snackbarManager?.showSuccess("Perfil actualizado correctamente")
+                    Toast.makeText(context, "Perfil actualizado", Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier.align(Alignment.End)
             ) {
@@ -162,9 +155,13 @@ fun SettingsScreen(
                 Switch(
                     checked = quotesEnabled,
                     onCheckedChange = {
-                        quotesEnabled = it
                         motivationalQuotesService.toggleQuotes(it)
                         snackbarManager?.showInfo("Frases motivadoras " + (if (it) "activadas" else "desactivadas"))
+                        Toast.makeText(
+                            context,
+                            "Frases motivadoras " + (if (it) "activadas" else "desactivadas"),
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 )
             }
@@ -203,6 +200,7 @@ fun SettingsScreen(
                 onClick = {
                     viewModel.saveApiKey(apiKeyInput)
                     snackbarManager?.showSuccess("API Key guardada correctamente")
+                    Toast.makeText(context, "API Key guardada correctamente", Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier.align(Alignment.End)
             ) {
@@ -235,7 +233,10 @@ fun SettingsScreen(
                     checked = isDarkTheme,
                     onCheckedChange = {
                         viewModel.toggleTheme()
-                        snackbarManager?.showInfo(context.getString(R.string.theme_changed))
+                        scope.launch {
+                            snackbarManager?.showInfo(context.getString(R.string.theme_changed))
+                        }
+                        Toast.makeText(context, "Tema cambiado", Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -271,6 +272,26 @@ fun SettingsScreen(
                         contentDescription = stringResource(R.string.select_language)
                     )
                 }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Botón específico para cerrar sesión
+            FilledTonalButton(
+                onClick = { showLogoutDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Logout,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Cerrar Sesión")
             }
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -323,6 +344,7 @@ fun SettingsScreen(
                 onClick = {
                     // Código para contactar con el soporte (WhatsApp o correo)
                     snackbarManager?.showInfo("Contactando con soporte...")
+                    Toast.makeText(context, "Contactando con soporte...", Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -356,9 +378,13 @@ fun SettingsScreen(
                             RadioButton(
                                 selected = language == selectedLanguage,
                                 onClick = {
-                                    selectedLanguage = language
                                     viewModel.saveLanguage(language)
                                     showLanguageDialog = false
+                                    Toast.makeText(
+                                        context,
+                                        "Cambiando idioma a $language. Reinicie la app si es necesario.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
                                     snackbarManager?.showInfo(context.getString(R.string.language_change_restart))
                                 }
                             )
@@ -387,18 +413,32 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
             title = { Text("Cerrar Sesión") },
-            text = { Text("¿Estás seguro de que deseas cerrar sesión?") },
+            text = {
+                Text(
+                    "¿Estás seguro de que deseas cerrar sesión? Esta acción te llevará a la pantalla de inicio de sesión.",
+                    textAlign = TextAlign.Center
+                )
+            },
             confirmButton = {
                 Button(
                     onClick = {
                         showLogoutDialog = false
+                        // Realizar cierre de sesión
                         loginViewModel.logout()
+                        // Mostrar un Toast
+                        Toast.makeText(context, "Sesión cerrada correctamente", Toast.LENGTH_SHORT).show()
+                        // Navegar a la pantalla de login
                         navController.navigate(Screen.Login.route) {
+                            // Limpiar el back stack para que no se pueda volver atrás
                             popUpTo(0) { inclusive = true }
                         }
-                    }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
                 ) {
-                    Text("Confirmar")
+                    Text("Cerrar Sesión")
                 }
             },
             dismissButton = {

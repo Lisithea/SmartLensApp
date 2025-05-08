@@ -38,6 +38,8 @@ import com.example.smartlens.service.UserProfileManager
 import com.example.smartlens.ui.screens.*
 import com.example.smartlens.viewmodel.LoginViewModel
 import com.example.smartlens.viewmodel.SettingsViewModel
+import com.example.smartlens.util.OcrTester
+import com.example.smartlens.util.OcrServiceFactory
 
 /**
  * Componente principal de navegación que incluye la BottomBar
@@ -57,13 +59,8 @@ fun MainNavigation(
     // Estado de autenticación
     val isAuthenticated by loginViewModel.isAuthenticated.collectAsState()
 
-    // Usamos Estado simple en lugar de LiveData o StateFlow
-    var apiKey by remember { mutableStateOf(settingsViewModel.apiKey) }
-
-    // Actualizar el estado cuando se carga el componente
-    LaunchedEffect(Unit) {
-        apiKey = settingsViewModel.apiKey
-    }
+    // Usamos Estado simple en lugar de LiveData o StateFlow para la API Key
+    val apiKey by settingsViewModel.apiKey.collectAsState()
 
     // Determinar la pantalla inicial
     val startDestination = Screen.Login.route
@@ -93,7 +90,7 @@ fun MainNavigation(
             val currentDestination = navBackStackEntry?.destination
 
             // Mostrar barra de navegación solo en las pantallas principales y si el usuario está autenticado
-            val showBottomBar = isAuthenticated && apiKey.isNotBlank() && bottomNavItems.any { item ->
+            val showBottomBar = isAuthenticated && apiKey.isNotEmpty() && bottomNavItems.any { item ->
                 currentDestination?.hierarchy?.any { it.route == item.route } == true
             }
 
@@ -213,8 +210,8 @@ fun MainNavigation(
                 val documentViewModel = hiltViewModel<com.example.smartlens.viewmodel.DocumentViewModel>()
 
                 // Crear OcrService y OcrTester usando el factory
-                val ocrService = com.example.smartlens.util.OcrServiceFactory.create(context)
-                val ocrTester = com.example.smartlens.util.OcrTester(context, ocrService)
+                val ocrService = OcrServiceFactory.create(context)
+                val ocrTester = OcrTester(context, ocrService)
 
                 DiagnosticScreen(
                     navController = navController,

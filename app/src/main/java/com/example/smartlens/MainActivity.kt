@@ -10,12 +10,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
+import com.example.smartlens.ui.components.LocalSnackbarManager
+import com.example.smartlens.ui.components.SnackbarManager
 import com.example.smartlens.ui.navigation.MainNavigation
 import com.example.smartlens.ui.theme.SmartLensTheme
 import com.example.smartlens.util.LanguageHelper
@@ -30,6 +34,7 @@ import javax.inject.Inject
 import com.example.smartlens.service.UserProfileManager
 import com.example.smartlens.service.MotivationalQuotesService
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.delay
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -43,13 +48,22 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var motivationalQuotesService: MotivationalQuotesService
 
+    // Variable para controlar si estamos recreando la actividad
+    private var isRecreating = false
+
     /**
      * Sobrescribe attachBaseContext para aplicar el idioma guardado
      */
     override fun attachBaseContext(newBase: Context) {
-        val language = LanguageHelper.getCurrentLanguage(newBase)
-        val context = LanguageHelper.updateLanguage(newBase, language)
-        super.attachBaseContext(context)
+        val currentLanguage = LanguageHelper.getCurrentLanguage(newBase)
+        Log.d("MainActivity", "attachBaseContext: Aplicando idioma: $currentLanguage")
+        val updatedContext = LanguageHelper.updateLanguage(newBase, currentLanguage)
+
+        // Mostrar el locale actual para debug
+        val locale = LanguageHelper.getCurrentLocale(updatedContext)
+        Log.d("MainActivity", "Locale configurado: $locale")
+
+        super.attachBaseContext(updatedContext)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -63,9 +77,14 @@ class MainActivity : ComponentActivity() {
             sampleDataLoader.loadSampleDataIfNeeded()
         }
 
+        // Verificar el idioma actual para debug
+        val currentLanguage = LanguageHelper.getCurrentLanguage(this)
+        val currentLocale = LanguageHelper.getCurrentLocale(this)
+        Log.d("MainActivity", "onCreate: Idioma actual: $currentLanguage, Locale: $currentLocale")
+
         setContent {
             // Usando estado local en lugar de collectAsState
-            var isDarkTheme by remember { mutableStateOf(false) }
+            var isDarkTheme by remember { mutableStateOf(ThemeManager.isDarkMode.value) }
 
             // Registramos un observador para el tema
             ThemeManager.addObserver { newValue ->
@@ -73,20 +92,26 @@ class MainActivity : ComponentActivity() {
                 Log.d("MainActivity", "Theme changed to dark: $newValue")
             }
 
+            // Crear SnackbarHostState y SnackbarManager
+            val snackbarHostState = remember { SnackbarHostState() }
+            val coroutineScope = rememberCoroutineScope()
+            val snackbarManager = remember { SnackbarManager(snackbarHostState, coroutineScope) }
+
             SmartLensTheme(darkTheme = isDarkTheme) {
-                val snackbarHostState = remember { SnackbarHostState() }
                 val navController = rememberNavController()
 
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    MainNavigation(
-                        navController = navController,
-                        userProfileManager = userProfileManager,
-                        motivationalQuotesService = motivationalQuotesService,
-                        snackbarHostState = snackbarHostState
-                    )
+                CompositionLocalProvider(LocalSnackbarManager provides snackbarManager) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        MainNavigation(
+                            navController = navController,
+                            userProfileManager = userProfileManager,
+                            motivationalQuotesService = motivationalQuotesService,
+                            snackbarHostState = snackbarHostState
+                        )
+                    }
                 }
             }
         }
@@ -98,11 +123,26 @@ class MainActivity : ComponentActivity() {
      */
     override fun onResume() {
         super.onResume()
-        // Si usamos un viewModel para gestionar los ajustes, podemos comprobar si ha habido cambios
+
+        // Si estamos en proceso de recreación, no hacer nada
+        if (isRecreating) {
+            isRecreating = false
+            return
+        }
+
+        // Verificar si necesitamos recrear la actividad por cambio de idioma
         val settingsViewModel: SettingsViewModel by viewModels()
         if (settingsViewModel.needsRestart()) {
-            // Reiniciar la actividad para aplicar el nuevo idioma
-            recreate()
+            Log.d("MainActivity", "onResume: Recreando actividad por cambio de idioma")
+
+            // Marcar que vamos a recrear para evitar bucles
+            isRecreating = true
+
+            // Retraso pequeño para asegurar que todo se complete antes de recrear
+            lifecycleScope.launch {
+                delay(300) // 300ms de retraso
+                recreate()
+            }
         }
     }
 }
