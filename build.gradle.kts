@@ -1,0 +1,13 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+plugins {
+    id("com.android.application") version "8.1.4" apply false
+    id("org.jetbrains.kotlin.android") version "1.9.20" apply false
+    id("com.google.dagger.hilt.android") version "2.48" apply false
+}
+
+// No definir repositorios aquí, ya que se definen en settings.gradle.kts
+// No usar allprojects ya que es obsoleto
+
+tasks.register("clean", Delete::class) {
+    delete(layout.buildDirectory) // Usar layout.buildDirectory en lugar de rootProject.buildDir
+}

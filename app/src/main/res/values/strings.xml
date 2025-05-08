@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Nombre de la aplicación (requerido por el manifiesto) -->
+    <string name="app_name">SmartLens</string>
+
+    <!-- Strings generales de la aplicación -->
+
+    <!-- Permisos -->
+    <string name="camera_permission_required">Se requiere permiso de cámara para escanear documentos</string>
+    <string name="storage_permission_required">Se requiere permiso de almacenamiento para guardar documentos</string>
+    <string name="grant_permission">Conceder permiso</string>
+
+    <!-- Navegación -->
+    <string name="navigation_home">Documentos</string>
+    <string name="navigation_camera">Escanear</string>
+    <string name="navigation_settings">Ajustes</string>
+
+    <!-- Cámara y procesamiento -->
+    <string name="select_from_gallery">Seleccionar de galería</string>
+    <string name="capture">Capturar</string>
+    <string name="processing">Procesando</string>
+    <string name="document_type">Tipo de documento</string>
+    <string name="document_details">Detalles del documento</string>
+    <string name="continue_text">Continuar</string>
+    <string name="back">Regresar</string>
+
+    <!-- Tipos de documentos -->
+    <string name="invoice">Factura</string>
+    <string name="delivery_note">Albarán</string>
+    <string name="warehouse_label">Etiqueta</string>
+    <string name="unknown_document">Documento desconocido</string>
+    <string name="invoice_description">Facturas, recibos, comprobantes</string>
+    <string name="delivery_note_description">Albaranes, notas de entrega</string>
+    <string name="warehouse_label_description">Etiquetas de producto, códigos de barras</string>
+
+    <!-- Procesar documento -->
+    <string name="extracting_text">Extrayendo texto</string>
+    <string name="analyzing_document">Analizando documento</string>
+    <string name="finalizing">Finalizando</string>
+    <string name="processing_error">Error al procesar documento</string>
+
+    <!-- Detalles de documento -->
+    <string name="invoice_information">Información de factura</string>
+    <string name="invoice_number">Número de factura</string>
+    <string name="date">Fecha</string>
+    <string name="due_date">Vencimiento</string>
+    <string name="supplier">Proveedor</string>
+    <string name="client">Cliente</string>
+    <string name="name">Nombre</string>
+    <string name="tax_id">NIF</string>
+    <string name="address">Dirección</string>
+    <string name="items">Artículos</string>
+    <string name="description">Descripción</string>
+    <string name="quantity">Cantidad</string>
+    <string name="unit_price">Precio unitario</string>
+    <string name="tax_rate">IVA%</string>
+    <string name="total">Total</string>
+    <string name="subtotal">Subtotal</string>
+    <string name="tax_amount">IVA</string>
+    <string name="payment_terms">Condiciones de pago</string>
+    <string name="notes">Notas</string>
+
+    <!-- Detalles de albarán -->
+    <string name="delivery_note_information">Información de albarán</string>
+    <string name="delivery_note_number">Número de albarán</string>
+    <string name="origin">Origen</string>
+    <string name="destination">Destino</string>
+    <string name="contact">Contacto</string>
+    <string name="phone">Teléfono</string>
+    <string name="carrier">Transportista</string>
+    <string name="package_type">Embalaje</string>
+    <string name="weight">Peso</string>
+    <string name="total_packages">Total bultos</string>
+    <string name="total_weight">Peso total</string>
+    <string name="observations">Observaciones</string>
+
+    <!-- Detalles de etiqueta -->
+    <string name="label_information">Información de etiqueta</string>
+    <string name="label_id">ID Etiqueta</string>
+    <string name="product_code">Código de producto</string>
+    <string name="product_name">Nombre de producto</string>
+    <string name="batch_number">Número de lote</string>
+    <string name="expiration_date">Fecha de caducidad</string>
+    <string name="location">Ubicación</string>
+    <string name="barcode">Código de barras</string>
+
+    <!-- Exportación -->
+    <string name="export">Exportar</string>
+    <string name="export_options">Opciones de exportación</string>
+    <string name="export_to_excel">Exportar a Excel</string>
+    <string name="export_to_excel_description">Genera un archivo Excel con los datos estructurados del documento</string>
+    <string name="share_document">Compartir documento</string>
+    <string name="share_document_description">Comparte el documento en formato JSON para abrir en PC</string>
+    <string name="generate_qr_code">Generar código QR</string>
+    <string name="generate_qr_code_description">Genera un código QR para acceder rápidamente al documento</string>
+    <string name="qr_code_generated">Código QR generado</string>
+    <string name="qr_code_scan_instructions">Escanea este código para abrir el documento en otro dispositivo</string>
+
+    <!-- Ajustes -->
+    <string name="settings">Configuración</string>
+    <string name="api_settings">Configuración de API</string>
+    <string name="api_key">API Key de Gemini</string>
+    <string name="api_key_hint">Introduce tu API Key</string>
+    <string name="save_api_key">Guardar API Key</string>
+    <string name="appearance">Apariencia</string>
+    <string name="dark_theme">Tema oscuro</string>
+    <string name="language">Idioma</string>
+    <string name="select_language">Seleccionar idioma</string>
+    <string name="cancel">Cancelar</string>
+    <string name="about">Acerca de SmartLens</string>
+    <string name="version">Versión 1.0.3</string>
+    <string name="app_description">SmartLens es una aplicación para el escaneo, procesado y gestión de documentos logísticos mediante visión artificial e inteligencia artificial.</string>
+
+    <!-- Mensajes de error -->
+    <string name="error">Error</string>
+    <string name="api_key_missing_error">API Key de Gemini no configurada. Por favor, configure la API Key en Ajustes.</string>
+    <string name="document_not_found_error">Documento no encontrado</string>
+    <string name="loading_error">Error al cargar</string>
+    <string name="ocr_error">Error en el reconocimiento de texto</string>
+    <string name="processing_error_generic">Error al procesar el documento</string>
+    <string name="network_error">Error de conexión. Compruebe su conexión a Internet.</string>
+    <string name="camera_error">Error en la cámara</string>
+    <string name="image_save_error">Error al guardar la imagen</string>
+
+    <!-- Mensajes informativos -->
+    <string name="no_documents">No hay documentos recientes</string>
+    <string name="scan_instructions">Captura un documento con la cámara para comenzar</string>
+    <string name="extracted_text">Texto extraído original</string>
+    <string name="loading">Cargando…</string>
+    <string name="delete_confirm">¿Está seguro de que desea eliminar este documento?</string>
+    <string name="yes">Sí</string>
+    <string name="no">No</string>
+    <string name="document_deleted">Documento eliminado</string>
+    <string name="document_saved">Documento guardado correctamente</string>
+    <string name="language_change_restart">Cambio de idioma aplicado. Los cambios serán visibles en toda la aplicación.</string>
+    <string name="theme_changed">Tema cambiado. El cambio se ha aplicado inmediatamente.</string>
+    <string name="detected_document_type">Tipo de documento detectado: %1$s</string>
+    <string name="change_document_type">Puede cambiar el tipo si la detección no es correcta:</string>
+
+    <!-- Configuración inicial de API Key -->
+    <string name="api_key_setup_title">Configuración inicial</string>
+    <string name="api_key_setup_desc">Para comenzar a usar SmartLens, necesitas configurar una API Key de Google Gemini. Esta clave es necesaria para procesar los documentos mediante IA.</string>
+    <string name="get_api_key">Obtener API Key de Gemini</string>
+    <string name="api_key_required">La API Key es obligatoria para continuar</string>
+    <string name="hide_api_key">Ocultar API Key</string>
+    <string name="show_api_key">Mostrar API Key</string>
+    <string name="setup_completed">Configuración completada</string>
+    <string name="clear">Borrar</string>
+    <string name="search">Buscar</string>
+    <string name="search_documents">Buscar documentos</string>
+    <string name="delete">Eliminar</string>
+</resources>
