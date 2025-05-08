@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -40,10 +41,10 @@ import com.example.smartlens.ui.screens.*
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun MainContent(
+    navController: NavHostController,
     userProfileManager: UserProfileManager,
     motivationalQuotesService: MotivationalQuotesService
 ) {
-    val navController = rememberNavController()
     val greeting = userProfileManager.getGreeting()
     val quote = motivationalQuotesService.getRandomQuote()
     val quotesEnabled by motivationalQuotesService.quotesEnabled.collectAsState()
@@ -126,7 +127,7 @@ fun MainContent(
         ) {
             // Pantalla de captura de cámara
             composable(Destinations.CAMERA_ROUTE) {
-                CameraScreen(navController)
+                CameraScreen(navController = navController)
             }
 
             // Pantalla de galería (lista de documentos)
@@ -142,6 +143,7 @@ fun MainContent(
             // Pantalla de configuración
             composable(Destinations.SETTINGS_ROUTE) {
                 SettingsScreen(
+                    navController = navController,
                     userProfileManager = userProfileManager,
                     motivationalQuotesService = motivationalQuotesService
                 )
@@ -149,7 +151,7 @@ fun MainContent(
 
             // Pantalla de configuración inicial de API Key
             composable(Destinations.API_KEY_SETUP_ROUTE) {
-                ApiKeySetupScreen(navController)
+                ApiKeySetupScreen(navController = navController)
             }
 
             // Pantalla para seleccionar tipo de documento
@@ -161,8 +163,8 @@ fun MainContent(
                     }
                 )
             ) { backStackEntry ->
-                val imageUri = backStackEntry.arguments?.getString("imageUri") ?: return@composable
-                DocumentTypeScreen(navController, imageUri)
+                val imageUriString = backStackEntry.arguments?.getString("imageUri") ?: return@composable
+                DocumentTypeScreen(navController = navController, imageUriString = imageUriString)
             }
 
             // Pantalla de procesamiento de documento
@@ -177,9 +179,13 @@ fun MainContent(
                     }
                 )
             ) { backStackEntry ->
-                val documentType = backStackEntry.arguments?.getString("documentType") ?: return@composable
-                val imageUri = backStackEntry.arguments?.getString("imageUri") ?: return@composable
-                ProcessingScreen(navController, documentType, imageUri)
+                val documentTypeString = backStackEntry.arguments?.getString("documentType") ?: return@composable
+                val imageUriString = backStackEntry.arguments?.getString("imageUri") ?: return@composable
+                ProcessingScreen(
+                    navController = navController,
+                    documentTypeString = documentTypeString,
+                    imageUriString = imageUriString
+                )
             }
 
             // Pantalla de detalles de documento
@@ -192,7 +198,7 @@ fun MainContent(
                 )
             ) { backStackEntry ->
                 val documentId = backStackEntry.arguments?.getString("documentId") ?: return@composable
-                DocumentDetailsScreen(navController, documentId)
+                DocumentDetailsScreen(navController = navController, documentId = documentId)
             }
 
             // Pantalla de exportación de documento
@@ -205,12 +211,12 @@ fun MainContent(
                 )
             ) { backStackEntry ->
                 val documentId = backStackEntry.arguments?.getString("documentId") ?: return@composable
-                ExportScreen(navController, documentId)
+                ExportScreen(navController = navController, documentId = documentId)
             }
         }
     }
 }
-//caca
+
 data class NavigationItem(
     val route: String,
     val labelResId: Int,

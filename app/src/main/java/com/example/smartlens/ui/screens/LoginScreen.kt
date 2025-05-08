@@ -39,7 +39,7 @@ fun LoginScreen(
     navController: NavController,
     viewModel: LoginViewModel = hiltViewModel()
 ) {
-    val context = LocalContext.current
+    // Variable context no se utiliza, la eliminamos
     val focusManager = LocalFocusManager.current
 
     // Estado de autenticación

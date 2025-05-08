@@ -51,6 +51,7 @@ fun MainNavigation(
 ) {
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val loginViewModel: LoginViewModel = hiltViewModel()
+    // Necesitamos el context para el OcrTester
     val context = LocalContext.current
 
     // Estado de autenticación
@@ -208,10 +209,17 @@ fun MainNavigation(
 
             // Pantalla de diagnóstico
             composable(Screen.Diagnostic.route) {
+                // Usar ViewModels específicos para evitar problemas de compatibilidad
+                val documentViewModel = hiltViewModel<com.example.smartlens.viewmodel.DocumentViewModel>()
+
+                // Crear OcrService y OcrTester usando el factory
+                val ocrService = com.example.smartlens.util.OcrServiceFactory.create(context)
+                val ocrTester = com.example.smartlens.util.OcrTester(context, ocrService)
+
                 DiagnosticScreen(
                     navController = navController,
-                    ocrTester = hiltViewModel(),
-                    viewModel = hiltViewModel()
+                    ocrTester = ocrTester,
+                    viewModel = documentViewModel
                 )
             }
         }

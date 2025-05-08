@@ -8,18 +8,15 @@ import android.util.Log
 import androidx.core.net.toUri
 import com.example.smartlens.model.DocumentType
 import com.example.smartlens.service.OcrService
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.FileOutputStream
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Clase utilitaria para probar el OCR con imágenes de ejemplo
+ * Version modificada sin inyección de dependencias
  */
-@Singleton
-class OcrTester @Inject constructor(
-    @ApplicationContext private val context: Context,
+class OcrTester(
+    private val context: Context,
     private val ocrService: OcrService
 ) {
     private val TAG = "OcrTester"

@@ -56,6 +56,11 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 
+    // Lifecycle
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2")
+    implementation("androidx.lifecycle:lifecycle-extensions:2.2.0")
+
     // AppCompat (para ThemeManager)
     implementation("androidx.appcompat:appcompat:1.6.1")
 

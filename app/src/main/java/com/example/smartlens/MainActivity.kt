@@ -23,10 +23,13 @@ import com.example.smartlens.util.SampleDataLoader
 import com.example.smartlens.util.ThemeManager
 import com.example.smartlens.viewmodel.SettingsViewModel
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import com.example.smartlens.service.UserProfileManager
 import com.example.smartlens.service.MotivationalQuotesService
+import androidx.lifecycle.lifecycleScope
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -56,7 +59,7 @@ class MainActivity : ComponentActivity() {
         ThemeManager.init(this)
 
         // Cargar datos de muestra en segundo plano
-        androidx.lifecycle.lifecycleScope.launch {
+        lifecycleScope.launch {
             sampleDataLoader.loadSampleDataIfNeeded()
         }
 

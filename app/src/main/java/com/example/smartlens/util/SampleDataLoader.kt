@@ -7,7 +7,9 @@ import androidx.core.net.toUri
 import com.example.smartlens.model.*
 import com.example.smartlens.repository.DocumentRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -25,6 +27,7 @@ class SampleDataLoader @Inject constructor(
 ) {
     private val preferences: SharedPreferences = context.getSharedPreferences("sample_data_prefs", Context.MODE_PRIVATE)
     private val SAMPLE_DATA_KEY = "sample_data_loaded"
+    private val coroutineScope = CoroutineScope(Dispatchers.IO)
 
     /**
      * Verifica si ya se han cargado los datos de muestra
@@ -42,9 +45,16 @@ class SampleDataLoader @Inject constructor(
 
     /**
      * Carga datos de muestra si es necesario
+     * Versión no suspendida para mayor flexibilidad
      */
-    suspend fun loadSampleDataIfNeeded() = withContext(Dispatchers.IO) {
-        if (!isDataLoaded()) {
+    fun loadSampleDataIfNeeded() {
+        // Si ya están cargados, no hacer nada
+        if (isDataLoaded()) {
+            return
+        }
+
+        // Lanzar en una corrutina pero sin hacer suspender al llamador
+        coroutineScope.launch {
             loadSampleData()
             markDataAsLoaded()
         }
@@ -53,7 +63,7 @@ class SampleDataLoader @Inject constructor(
     /**
      * Carga datos de muestra en la base de datos
      */
-    private suspend fun loadSampleData() {
+    private suspend fun loadSampleData() = withContext(Dispatchers.IO) {
         // Crear algunas imágenes de muestra
         val invoiceImageUri = createSampleImage("sample_invoice.jpg")
         val deliveryNoteImageUri = createSampleImage("sample_delivery_note.jpg")
