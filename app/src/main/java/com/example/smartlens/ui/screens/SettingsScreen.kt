@@ -14,22 +14,30 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavController
 import com.example.smartlens.R
 import com.example.smartlens.service.MotivationalQuotesService
 import com.example.smartlens.service.UserProfileManager
+import com.example.smartlens.ui.components.LocalSnackbarManager
+import com.example.smartlens.ui.navigation.Screen
 import com.example.smartlens.util.ThemeManager
+import com.example.smartlens.viewmodel.LoginViewModel
 import com.example.smartlens.viewmodel.SettingsViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    navController: NavController,
     viewModel: SettingsViewModel = hiltViewModel(),
+    loginViewModel: LoginViewModel = hiltViewModel(),
     userProfileManager: UserProfileManager,
     motivationalQuotesService: MotivationalQuotesService
 ) {
     val context = LocalContext.current
+    val snackbarManager = LocalSnackbarManager.current
 
     // Usamos un estado local que se actualiza con LaunchedEffect para evitar problemas con collectAsState
     var isDarkTheme by remember { mutableStateOf(false) }
@@ -48,7 +56,7 @@ fun SettingsScreen(
             isDarkTheme = newValue
         }
 
-        // Registramos un observador para el tema (simulado)
+        // Registramos un observador para el tema
         ThemeManager.addObserver(observer)
 
         onDispose {
@@ -63,10 +71,19 @@ fun SettingsScreen(
     var showLanguageDialog by remember { mutableStateOf(false) }
     var selectedLanguage by remember { mutableStateOf(viewModel.selectedLanguage) }
 
+    // Estado para confirmar cierre de sesión
+    var showLogoutDialog by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.settings)) },
+                actions = {
+                    // Botón de cerrar sesión
+                    IconButton(onClick = { showLogoutDialog = true }) {
+                        Icon(Icons.Default.Logout, contentDescription = "Cerrar sesión")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -113,7 +130,7 @@ fun SettingsScreen(
                 onClick = {
                     userProfileManager.saveUserName(userName)
                     userProfileManager.saveEmail(userEmail)
-                    Toast.makeText(context, "Perfil actualizado correctamente", Toast.LENGTH_SHORT).show()
+                    snackbarManager?.showSuccess("Perfil actualizado correctamente")
                 },
                 modifier = Modifier.align(Alignment.End)
             ) {
@@ -147,7 +164,7 @@ fun SettingsScreen(
                     onCheckedChange = {
                         quotesEnabled = it
                         motivationalQuotesService.toggleQuotes(it)
-                        Toast.makeText(context, "Frases motivadoras " + (if (it) "activadas" else "desactivadas"), Toast.LENGTH_SHORT).show()
+                        snackbarManager?.showInfo("Frases motivadoras " + (if (it) "activadas" else "desactivadas"))
                     }
                 )
             }
@@ -185,7 +202,7 @@ fun SettingsScreen(
             Button(
                 onClick = {
                     viewModel.saveApiKey(apiKeyInput)
-                    Toast.makeText(context, "API Key guardada correctamente", Toast.LENGTH_SHORT).show()
+                    snackbarManager?.showSuccess("API Key guardada correctamente")
                 },
                 modifier = Modifier.align(Alignment.End)
             ) {
@@ -218,7 +235,7 @@ fun SettingsScreen(
                     checked = isDarkTheme,
                     onCheckedChange = {
                         viewModel.toggleTheme()
-                        Toast.makeText(context, context.getString(R.string.theme_changed), Toast.LENGTH_SHORT).show()
+                        snackbarManager?.showInfo(context.getString(R.string.theme_changed))
                     }
                 )
             }
@@ -256,6 +273,27 @@ fun SettingsScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Sección de herramientas de diagnóstico
+            Text(
+                text = "Herramientas de Diagnóstico",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            FilledTonalButton(
+                onClick = { navController.navigate(Screen.Diagnostic.route) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.BugReport, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Diagnosticar OCR")
+                }
+            }
+
             // Información de la aplicación
             Spacer(modifier = Modifier.height(32.dp))
 
@@ -284,7 +322,7 @@ fun SettingsScreen(
             OutlinedButton(
                 onClick = {
                     // Código para contactar con el soporte (WhatsApp o correo)
-                    Toast.makeText(context, "Contactando con soporte...", Toast.LENGTH_SHORT).show()
+                    snackbarManager?.showInfo("Contactando con soporte...")
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -321,7 +359,7 @@ fun SettingsScreen(
                                     selectedLanguage = language
                                     viewModel.saveLanguage(language)
                                     showLanguageDialog = false
-                                    Toast.makeText(context, context.getString(R.string.language_change_restart), Toast.LENGTH_LONG).show()
+                                    snackbarManager?.showInfo(context.getString(R.string.language_change_restart))
                                 }
                             )
 
@@ -339,6 +377,33 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(onClick = { showLanguageDialog = false }) {
                     Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    // Diálogo de confirmación para cerrar sesión
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("Cerrar Sesión") },
+            text = { Text("¿Estás seguro de que deseas cerrar sesión?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutDialog = false
+                        loginViewModel.logout()
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                ) {
+                    Text("Confirmar")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showLogoutDialog = false }) {
+                    Text("Cancelar")
                 }
             }
         )

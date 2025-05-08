@@ -1,5 +1,6 @@
 package com.example.smartlens.ui.navigation
 
+import android.content.Context
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
@@ -9,14 +10,18 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -31,6 +36,7 @@ import com.example.smartlens.R
 import com.example.smartlens.service.MotivationalQuotesService
 import com.example.smartlens.service.UserProfileManager
 import com.example.smartlens.ui.screens.*
+import com.example.smartlens.viewmodel.LoginViewModel
 import com.example.smartlens.viewmodel.SettingsViewModel
 
 /**
@@ -40,9 +46,15 @@ import com.example.smartlens.viewmodel.SettingsViewModel
 fun MainNavigation(
     navController: NavHostController,
     userProfileManager: UserProfileManager,
-    motivationalQuotesService: MotivationalQuotesService
+    motivationalQuotesService: MotivationalQuotesService,
+    snackbarHostState: SnackbarHostState
 ) {
     val settingsViewModel: SettingsViewModel = hiltViewModel()
+    val loginViewModel: LoginViewModel = hiltViewModel()
+    val context = LocalContext.current
+
+    // Estado de autenticación
+    val isAuthenticated by loginViewModel.isAuthenticated.collectAsState()
 
     // Usamos Estado simple en lugar de LiveData o StateFlow
     var apiKey by remember { mutableStateOf(settingsViewModel.apiKey) }
@@ -52,12 +64,8 @@ fun MainNavigation(
         apiKey = settingsViewModel.apiKey
     }
 
-    // Determinar la pantalla inicial según si hay API Key configurada
-    val startDestination = if (apiKey.isBlank()) {
-        Screen.ApiKeySetup.route
-    } else {
-        Screen.Home.route
-    }
+    // Determinar la pantalla inicial
+    val startDestination = Screen.Login.route
 
     val bottomNavItems = listOf(
         BottomNavItem(
@@ -78,12 +86,13 @@ fun MainNavigation(
     )
 
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
             val navBackStackEntry by navController.currentBackStackEntryAsState()
             val currentDestination = navBackStackEntry?.destination
 
-            // Mostrar barra de navegación solo en las pantallas principales y si API Key está configurada
-            val showBottomBar = apiKey.isNotBlank() && bottomNavItems.any { item ->
+            // Mostrar barra de navegación solo en las pantallas principales y si el usuario está autenticado
+            val showBottomBar = isAuthenticated && apiKey.isNotBlank() && bottomNavItems.any { item ->
                 currentDestination?.hierarchy?.any { it.route == item.route } == true
             }
 
@@ -112,6 +121,11 @@ fun MainNavigation(
             startDestination = startDestination,
             modifier = Modifier.padding(innerPadding)
         ) {
+            // Pantalla de inicio de sesión
+            composable(Screen.Login.route) {
+                LoginScreen(navController)
+            }
+
             // Pantalla de configuración inicial
             composable(Screen.ApiKeySetup.route) {
                 ApiKeySetupScreen(navController)
@@ -132,6 +146,7 @@ fun MainNavigation(
 
             composable(Screen.Settings.route) {
                 SettingsScreen(
+                    navController = navController,
                     userProfileManager = userProfileManager,
                     motivationalQuotesService = motivationalQuotesService
                 )
@@ -189,6 +204,15 @@ fun MainNavigation(
             ) { backStackEntry ->
                 val documentId = backStackEntry.arguments?.getString("documentId") ?: return@composable
                 ExportScreen(navController, documentId)
+            }
+
+            // Pantalla de diagnóstico
+            composable(Screen.Diagnostic.route) {
+                DiagnosticScreen(
+                    navController = navController,
+                    ocrTester = hiltViewModel(),
+                    viewModel = hiltViewModel()
+                )
             }
         }
     }

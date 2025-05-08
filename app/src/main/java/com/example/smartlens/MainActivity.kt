@@ -7,25 +7,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
-import com.example.smartlens.ui.components.LocalSnackbarManager
-import com.example.smartlens.ui.components.SnackbarManager
 import com.example.smartlens.ui.navigation.MainNavigation
 import com.example.smartlens.ui.theme.SmartLensTheme
 import com.example.smartlens.util.LanguageHelper
@@ -66,7 +56,7 @@ class MainActivity : ComponentActivity() {
         ThemeManager.init(this)
 
         // Cargar datos de muestra en segundo plano
-        lifecycleScope.launch {
+        androidx.lifecycle.lifecycleScope.launch {
             sampleDataLoader.loadSampleDataIfNeeded()
         }
 
@@ -81,10 +71,20 @@ class MainActivity : ComponentActivity() {
             }
 
             SmartLensTheme(darkTheme = isDarkTheme) {
-                SmartLensApp(
-                    userProfileManager = userProfileManager,
-                    motivationalQuotesService = motivationalQuotesService
-                )
+                val snackbarHostState = remember { SnackbarHostState() }
+                val navController = rememberNavController()
+
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    MainNavigation(
+                        navController = navController,
+                        userProfileManager = userProfileManager,
+                        motivationalQuotesService = motivationalQuotesService,
+                        snackbarHostState = snackbarHostState
+                    )
+                }
             }
         }
     }
@@ -100,37 +100,6 @@ class MainActivity : ComponentActivity() {
         if (settingsViewModel.needsRestart()) {
             // Reiniciar la actividad para aplicar el nuevo idioma
             recreate()
-        }
-    }
-}
-
-@Composable
-fun SmartLensApp(
-    userProfileManager: UserProfileManager,
-    motivationalQuotesService: MotivationalQuotesService
-) {
-    val navController = rememberNavController()
-    val snackbarHostState = remember { SnackbarHostState() }
-    val coroutineScope = rememberCoroutineScope()
-    val snackbarManager = remember { SnackbarManager(snackbarHostState, coroutineScope) }
-
-    CompositionLocalProvider(LocalSnackbarManager provides snackbarManager) {
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
-        ) { innerPadding ->
-            Surface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                color = MaterialTheme.colorScheme.background
-            ) {
-                MainNavigation(
-                    navController = navController,
-                    userProfileManager = userProfileManager,
-                    motivationalQuotesService = motivationalQuotesService
-                )
-            }
         }
     }
 }

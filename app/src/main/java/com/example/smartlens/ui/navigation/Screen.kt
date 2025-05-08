@@ -4,6 +4,7 @@ package com.example.smartlens.ui.navigation
  * Enum class que define las rutas principales de navegación
  */
 sealed class Screen(val route: String) {
+    object Login : Screen("login")
     object ApiKeySetup : Screen("api_key_setup")
     object Home : Screen("home")
     object Camera : Screen("camera")
@@ -12,4 +13,5 @@ sealed class Screen(val route: String) {
     object Processing : Screen("processing")
     object DocumentDetails : Screen("document_details")
     object Export : Screen("export")
+    object Diagnostic : Screen("diagnostic")
 }

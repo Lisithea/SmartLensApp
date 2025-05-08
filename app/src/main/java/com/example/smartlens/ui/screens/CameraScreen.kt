@@ -15,18 +15,19 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Camera
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -38,11 +39,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.example.smartlens.R
+import com.example.smartlens.ui.components.LocalSnackbarManager
 import com.example.smartlens.ui.navigation.Screen
 import com.example.smartlens.viewmodel.DocumentViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.Executor
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,14 +56,29 @@ fun CameraScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val scope = rememberCoroutineScope()
+    val snackbarManager = LocalSnackbarManager.current
+    val TAG = "CameraScreen"
 
     var hasCameraPermission by remember { mutableStateOf(false) }
+    var hasStoragePermission by remember { mutableStateOf(false) }
 
-    val requestPermissionLauncher = rememberLauncherForActivityResult(
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { granted ->
             hasCameraPermission = granted
+            if (!granted) {
+                snackbarManager?.showError("Se requiere permiso de cámara para escanear documentos")
+            }
+        }
+    )
+
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { granted ->
+            hasStoragePermission = granted
+            if (!granted) {
+                snackbarManager?.showError("Se requiere permiso de almacenamiento para guardar documentos")
+            }
         }
     )
 
@@ -68,12 +87,15 @@ fun CameraScreen(
     ) { uri ->
         uri?.let {
             try {
+                Log.d(TAG, "Imagen seleccionada de galería: $uri")
+                // Mostrar un mensaje de carga
+                snackbarManager?.showInfo("Procesando imagen...")
                 // Guardar la imagen temporal y navegar
                 val tempUri = viewModel.saveTemporaryImage(it)
                 navigateToDocumentType(navController, tempUri.toString())
             } catch (e: Exception) {
-                Log.e("CameraScreen", "Error al seleccionar imagen: ${e.message}", e)
-                Toast.makeText(context, "Error al seleccionar imagen: ${e.message}", Toast.LENGTH_LONG).show()
+                Log.e(TAG, "Error al seleccionar imagen: ${e.message}", e)
+                snackbarManager?.showError("Error al seleccionar imagen: ${e.message}")
             }
         }
     }
@@ -85,15 +107,31 @@ fun CameraScreen(
     val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
 
     // Configuración de captura de imagen
-    val imageCapture = remember { ImageCapture.Builder().build() }
+    val imageCapture = remember {
+        ImageCapture.Builder()
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+            .build()
+    }
 
     // Estado de carga
     var isTakingPicture by remember { mutableStateOf(false) }
 
-    // Efecto para solicitar permisos
+    // Efectos para solicitar permisos
     LaunchedEffect(key1 = Unit) {
-        requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+
+        // Verificar qué permiso de almacenamiento solicitar según la versión de Android
+        val storagePermission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_IMAGES
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        storagePermissionLauncher.launch(storagePermission)
     }
+
+    // Cuando el OCR falla, necesitamos un modo de depuración
+    var debugMode by remember { mutableStateOf(false) }
+    var debugInfo by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
@@ -102,6 +140,15 @@ fun CameraScreen(
                 navigationIcon = {
                     IconButton(onClick = { navController.navigateUp() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = stringResource(R.string.back))
+                    }
+                },
+                actions = {
+                    // Botón para activar/desactivar el modo de depuración
+                    IconButton(onClick = { debugMode = !debugMode }) {
+                        Icon(
+                            imageVector = if (debugMode) Icons.Default.BugReport else Icons.Default.Settings,
+                            contentDescription = "Modo de depuración"
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -120,15 +167,21 @@ fun CameraScreen(
                 // Vista de cámara
                 AndroidView(
                     factory = { ctx ->
-                        val previewView = PreviewView(ctx)
+                        val previewView = PreviewView(ctx).apply {
+                            // Configurar para mejor visualización
+                            scaleType = PreviewView.ScaleType.FILL_CENTER
+                            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                        }
 
                         cameraProviderFuture.addListener({
                             try {
                                 val cameraProvider = cameraProviderFuture.get()
 
-                                val preview = Preview.Builder().build().also {
-                                    it.setSurfaceProvider(previewView.surfaceProvider)
-                                }
+                                val preview = Preview.Builder()
+                                    .build()
+                                    .also {
+                                        it.setSurfaceProvider(previewView.surfaceProvider)
+                                    }
 
                                 val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
@@ -140,13 +193,24 @@ fun CameraScreen(
                                         preview,
                                         imageCapture
                                     )
+
+                                    if (debugMode) {
+                                        debugInfo = "Cámara inicializada correctamente"
+                                    }
+
                                 } catch (e: Exception) {
-                                    e.printStackTrace()
-                                    Toast.makeText(context, "Error al inicializar la cámara: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                                    Log.e(TAG, "Error al vincular casos de uso de cámara: ${e.message}", e)
+                                    if (debugMode) {
+                                        debugInfo = "Error al inicializar cámara: ${e.message}"
+                                    }
+                                    snackbarManager?.showError("Error al inicializar la cámara: ${e.localizedMessage}")
                                 }
                             } catch (e: Exception) {
-                                e.printStackTrace()
-                                Toast.makeText(context, "Error al obtener el proveedor de cámara: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                                Log.e(TAG, "Error al obtener proveedor de cámara: ${e.message}", e)
+                                if (debugMode) {
+                                    debugInfo = "Error al obtener proveedor de cámara: ${e.message}"
+                                }
+                                snackbarManager?.showError("Error al obtener el proveedor de cámara: ${e.localizedMessage}")
                             }
                         }, executor)
 
@@ -155,6 +219,25 @@ fun CameraScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
+                // Recuadro guía para la cámara
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(4/3f)
+                            .border(
+                                width = 2.dp,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                    )
+                }
+
                 // Controles de cámara
                 Column(
                     modifier = Modifier
@@ -162,6 +245,21 @@ fun CameraScreen(
                         .padding(bottom = 32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // Instrucciones
+                    Text(
+                        text = "Coloca el documento dentro del recuadro",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .background(
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                                RoundedCornerShape(16.dp)
+                            )
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -170,14 +268,15 @@ fun CameraScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Botón para abrir galería
-                        IconButton(
-                            onClick = { galleryLauncher.launch("image/*") }
+                        FilledTonalIconButton(
+                            onClick = { galleryLauncher.launch("image/*") },
+                            modifier = Modifier.size(56.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.PhotoLibrary,
                                 contentDescription = stringResource(R.string.select_from_gallery),
-                                tint = Color.White,
-                                modifier = Modifier.size(36.dp)
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(24.dp)
                             )
                         }
 
@@ -185,7 +284,7 @@ fun CameraScreen(
                         Box(
                             modifier = Modifier
                                 .size(80.dp)
-                                .border(2.dp, Color.White, CircleShape),
+                                .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             IconButton(
@@ -199,35 +298,71 @@ fun CameraScreen(
                                             executor = executor,
                                             onImageCaptured = { uri ->
                                                 isTakingPicture = false
+                                                if (debugMode) {
+                                                    debugInfo = "Imagen capturada: $uri"
+                                                }
                                                 navigateToDocumentType(navController, uri.toString())
                                             },
                                             onError = { exception ->
                                                 isTakingPicture = false
-                                                Log.e("CameraScreen", "Error al capturar imagen: ${exception.message}", exception)
-                                                Toast.makeText(
-                                                    context,
-                                                    "Error al capturar imagen: ${exception.localizedMessage}",
-                                                    Toast.LENGTH_LONG
-                                                ).show()
+                                                if (debugMode) {
+                                                    debugInfo = "Error al capturar: ${exception.message}"
+                                                }
+                                                Log.e(TAG, "Error al capturar imagen: ${exception.message}", exception)
+                                                snackbarManager?.showError("Error al capturar imagen: ${exception.localizedMessage}")
                                             }
                                         )
                                     }
                                 },
                                 modifier = Modifier
                                     .size(64.dp)
-                                    .border(2.dp, Color.White, CircleShape)
+                                    .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.CameraAlt,
                                     contentDescription = stringResource(R.string.capture),
-                                    tint = Color.White,
+                                    tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(36.dp)
                                 )
                             }
                         }
 
-                        // Espacio para balance visual
-                        Box(modifier = Modifier.size(36.dp))
+                        // Invertir cámara
+                        FilledTonalIconButton(
+                            onClick = { /* Implementar cambio de cámara */ },
+                            modifier = Modifier.size(56.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FlipCameraAndroid,
+                                contentDescription = "Invertir cámara",
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Modo de depuración
+                if (debugMode) {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f))
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = "Modo de depuración activado",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (debugInfo.isNotEmpty()) {
+                            Text(
+                                text = debugInfo,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
@@ -236,10 +371,23 @@ fun CameraScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(16.dp),
+                            .background(Color.Black.copy(alpha = 0.5f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator()
+                        Card(
+                            modifier = Modifier
+                                .width(200.dp)
+                                .padding(16.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                CircularProgressIndicator()
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text("Capturando imagen...")
+                            }
+                        }
                     }
                 }
             } else {
@@ -276,7 +424,7 @@ fun CameraScreen(
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Button(
-                        onClick = { requestPermissionLauncher.launch(Manifest.permission.CAMERA) }
+                        onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }
                     ) {
                         Text(stringResource(R.string.grant_permission))
                     }
@@ -298,7 +446,6 @@ private fun navigateToDocumentType(navController: NavController, uriString: Stri
     try {
         Log.d("CameraScreen", "Navegando a DocumentType con URI: $uriString")
         navController.navigate("${Screen.DocumentType.route}/$uriString") {
-            // Corregido: Eliminada la propiedad inclusive y la referencia a Camera.route
             popUpTo(navController.graph.findStartDestination().id)
         }
     } catch (e: Exception) {
@@ -315,12 +462,14 @@ private fun takePicture(
     onError: (ImageCaptureException) -> Unit
 ) {
     try {
+        // Crear un nombre único para la imagen
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, "SmartLens_$timestamp")
             put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
         }
 
+        // Configurar opciones de salida utilizando ContentResolver
         val outputOptions = ImageCapture.OutputFileOptions.Builder(
             context.contentResolver,
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
@@ -328,6 +477,8 @@ private fun takePicture(
         ).build()
 
         Log.d("CameraScreen", "Iniciando captura de imagen")
+
+        // Capturar la imagen con alta calidad
         imageCapture.takePicture(
             outputOptions,
             executor,
@@ -350,7 +501,7 @@ private fun takePicture(
                 }
 
                 override fun onError(exception: ImageCaptureException) {
-                    Log.e("CameraScreen", "Error en callback de imagen: ${exception.message}")
+                    Log.e("CameraScreen", "Error en callback de imagen: ${exception.message}", exception)
                     onError(exception)
                 }
             }
