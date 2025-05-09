@@ -1,33 +1,129 @@
 package com.example.smartlens.util
 
+import android.app.Activity
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.res.Configuration
 import android.os.Build
 import android.os.LocaleList
 import android.util.Log
+import androidx.appcompat.app.AppCompatDelegate
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import java.util.Locale
 
 /**
  * Clase de utilidad para gestionar el idioma de la aplicación
  */
 object LanguageHelper {
-
     private const val TAG = "LanguageHelper"
+    private const val PREF_NAME = "smartlens_language_settings"
+    private const val KEY_SELECTED_LANGUAGE = "selected_language"
+
+    // Estado del idioma actual
+    private val _currentLanguage = MutableStateFlow("español")
+    val currentLanguage: StateFlow<String> = _currentLanguage
+
+    // Lista de idiomas soportados
+    val supportedLanguages = listOf(
+        "español",
+        "inglés",
+        "francés",
+        "alemán",
+        "italiano",
+        "portugués",
+        "catalán"
+    )
+
+    // Mapeo de nombres a códigos ISO
+    private val languageCodes = mapOf(
+        "español" to "es",
+        "inglés" to "en",
+        "francés" to "fr",
+        "alemán" to "de",
+        "italiano" to "it",
+        "portugués" to "pt",
+        "catalán" to "ca"
+    )
+
+    // Mapeo de códigos a emojis de banderas
+    private val languageFlags = mapOf(
+        "es" to "🇪🇸",
+        "en" to "🇬🇧",
+        "fr" to "🇫🇷",
+        "de" to "🇩🇪",
+        "it" to "🇮🇹",
+        "pt" to "🇵🇹",
+        "ca" to "🏳️"
+    )
 
     /**
-     * Actualiza la configuración de idioma para toda la aplicación
+     * Inicializa el helper con el contexto de la aplicación
+     */
+    fun init(context: Context) {
+        val savedLanguage = getSavedLanguage(context)
+        _currentLanguage.value = savedLanguage
+
+        // Aplicar idioma guardado
+        val locale = getLocaleFromLanguageName(savedLanguage)
+        updateLocale(context, locale)
+
+        Log.d(TAG, "LanguageHelper inicializado con idioma: $savedLanguage")
+    }
+
+    /**
+     * Actualiza el idioma para toda la aplicación
+     * Retorna true si se cambió el idioma y es necesario recrear las actividades
+     */
+    fun setLanguage(context: Context, languageName: String): Boolean {
+        if (_currentLanguage.value == languageName) {
+            return false // No hay cambio
+        }
+
+        Log.d(TAG, "Cambiando idioma de ${_currentLanguage.value} a $languageName")
+
+        // Guardar en preferencias
+        saveLanguagePreference(context, languageName)
+
+        // Actualizar estado
+        _currentLanguage.value = languageName
+
+        // Actualizar locale
+        val locale = getLocaleFromLanguageName(languageName)
+        updateLocale(context, locale)
+
+        return true // Idioma cambiado, se debe recrear la actividad
+    }
+
+    /**
+     * Obtiene el idioma guardado en preferencias
+     */
+    private fun getSavedLanguage(context: Context): String {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_SELECTED_LANGUAGE, "español") ?: "español"
+    }
+
+    /**
+     * Guarda el idioma en preferencias
+     */
+    private fun saveLanguagePreference(context: Context, languageName: String) {
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_SELECTED_LANGUAGE, languageName).apply()
+    }
+
+    /**
+     * Obtiene el emoji de bandera para un idioma
+     */
+    fun getFlagForLanguage(languageName: String): String {
+        val code = languageCodes[languageName.lowercase()] ?: "es"
+        return languageFlags[code] ?: "🏳️"
+    }
+
+    /**
+     * Actualiza el idioma para toda la aplicación
      */
     fun updateLanguage(context: Context, languageName: String): Context {
         val locale = getLocaleFromLanguageName(languageName)
-        Log.d(TAG, "Actualizando idioma a: $languageName (Locale: $locale)")
-
-        // Guardar el idioma seleccionado en preferencias
-        val prefs = context.getSharedPreferences("smartlens_settings", Context.MODE_PRIVATE)
-        prefs.edit().putString("selected_language", languageName).apply()
-
-        // Establecer el locale por defecto
-        Locale.setDefault(locale)
-
         return updateResources(context, locale)
     }
 
@@ -35,99 +131,67 @@ object LanguageHelper {
      * Obtiene la configuración de idioma actual guardada en las preferencias
      */
     fun getCurrentLanguage(context: Context): String {
-        val prefs = context.getSharedPreferences("smartlens_settings", Context.MODE_PRIVATE)
-        val language = prefs.getString("selected_language", "español") ?: "español"
-        Log.d(TAG, "Idioma actual: $language")
-        return language
+        val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_SELECTED_LANGUAGE, "español") ?: "español"
     }
 
     /**
      * Convierte un nombre de idioma en un objeto Locale
      */
     private fun getLocaleFromLanguageName(languageName: String): Locale {
-        return when (languageName.lowercase()) {
-            "español" -> Locale("es", "ES")
-            "inglés" -> Locale("en", "US")
-            "francés" -> Locale("fr", "FR")
-            "alemán" -> Locale("de", "DE")
-            "italiano" -> Locale("it", "IT")
-            "portugués" -> Locale("pt", "PT")
-            "chino" -> Locale("zh", "CN")
-            "japonés" -> Locale("ja", "JP")
-            "coreano" -> Locale("ko", "KR")
-            "ruso" -> Locale("ru", "RU")
-            "árabe" -> Locale("ar", "SA")
-            else -> {
-                Log.w(TAG, "Idioma desconocido: $languageName, usando español por defecto")
-                Locale("es", "ES") // Español por defecto
-            }
+        val code = languageCodes[languageName.lowercase()] ?: "es"
+        return when (code) {
+            "es" -> Locale("es", "ES")
+            "en" -> Locale("en", "GB")
+            "fr" -> Locale("fr", "FR")
+            "de" -> Locale("de", "DE")
+            "it" -> Locale("it", "IT")
+            "pt" -> Locale("pt", "PT")
+            "ca" -> Locale("ca", "ES")
+            else -> Locale("es", "ES") // Español por defecto
         }
+    }
+
+    /**
+     * Actualiza el locale del sistema
+     */
+    private fun updateLocale(context: Context, locale: Locale) {
+        Locale.setDefault(locale)
+
+        val res = context.resources
+        val config = Configuration(res.configuration)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            config.setLocales(LocaleList(locale))
+        } else {
+            config.locale = locale
+        }
+
+        res.updateConfiguration(config, res.displayMetrics)
     }
 
     /**
      * Actualiza los recursos del contexto con el nuevo idioma
-     * Implementación actualizada para usar métodos no deprecados cuando sea posible
      */
     private fun updateResources(context: Context, locale: Locale): Context {
+        Locale.setDefault(locale)
+
         var updatedContext = context
+        val resources = context.resources
+        val configuration = Configuration(resources.configuration)
 
-        try {
-            val resources = context.resources
-            val configuration = Configuration(resources.configuration)
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                // Para Android 7.0 (API 24) y superior
-                val localeList = LocaleList(locale)
-                LocaleList.setDefault(localeList)
-                configuration.setLocales(localeList)
-                Log.d(TAG, "Configurando idioma para Android 7.0+: $locale")
-
-                try {
-                    updatedContext = context.createConfigurationContext(configuration)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error al crear ConfigurationContext: ${e.message}", e)
-                    // Si falla la creación del ConfigurationContext, caemos al método antiguo
-                    // pero con @Suppress para evitar warnings de deprecation
-                    @Suppress("DEPRECATION")
-                    configuration.locale = locale
-                    @Suppress("DEPRECATION")
-                    resources.updateConfiguration(configuration, resources.displayMetrics)
-                }
-            } else {
-                // Para versiones anteriores a Android 7.0
-                // Usamos @Suppress para evitar warnings de deprecation
-                @Suppress("DEPRECATION")
-                configuration.locale = locale
-                Log.d(TAG, "Configurando idioma para Android < 7.0: $locale")
-                @Suppress("DEPRECATION")
-                resources.updateConfiguration(configuration, resources.displayMetrics)
-            }
-
-            // Imprimir el idioma configurado para verificar
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                Log.d(TAG, "Locale configurado: ${updatedContext.resources.configuration.locales.get(0)}")
-            } else {
-                @Suppress("DEPRECATION")
-                Log.d(TAG, "Locale configurado: ${updatedContext.resources.configuration.locale}")
-            }
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error al actualizar recursos: ${e.message}", e)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            // Para Android 7.0 (API 24) y superior
+            val localeList = LocaleList(locale)
+            LocaleList.setDefault(localeList)
+            configuration.setLocales(localeList)
+            updatedContext = context.createConfigurationContext(configuration)
+        } else {
+            // Para versiones anteriores
+            configuration.locale = locale
+            resources.updateConfiguration(configuration, resources.displayMetrics)
         }
 
         return updatedContext
-    }
-
-    /**
-     * Obtiene el Locale actual de la configuración
-     */
-    fun getCurrentLocale(context: Context): Locale {
-        val configuration = context.resources.configuration
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            configuration.locales.get(0)
-        } else {
-            @Suppress("DEPRECATION")
-            configuration.locale
-        }
     }
 }

@@ -1,6 +1,9 @@
 package com.example.smartlens.ui.navigation
 
-import android.content.Context
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
@@ -20,11 +23,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -36,10 +41,12 @@ import com.example.smartlens.R
 import com.example.smartlens.service.MotivationalQuotesService
 import com.example.smartlens.service.UserProfileManager
 import com.example.smartlens.ui.screens.*
+import com.example.smartlens.util.OcrServiceFactory
+import com.example.smartlens.util.OcrTester
+import com.example.smartlens.viewmodel.DocumentViewModel
 import com.example.smartlens.viewmodel.LoginViewModel
 import com.example.smartlens.viewmodel.SettingsViewModel
-import com.example.smartlens.util.OcrTester
-import com.example.smartlens.util.OcrServiceFactory
+import kotlinx.coroutines.delay
 
 /**
  * Componente principal de navegación que incluye la BottomBar
@@ -53,18 +60,40 @@ fun MainNavigation(
 ) {
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val loginViewModel: LoginViewModel = hiltViewModel()
-    // Necesitamos el context para el OcrTester
     val context = LocalContext.current
 
     // Estado de autenticación
     val isAuthenticated by loginViewModel.isAuthenticated.collectAsState()
 
-    // Usamos Estado simple en lugar de LiveData o StateFlow para la API Key
-    val apiKey by settingsViewModel.apiKey.collectAsState()
+    // Estado para la API Key
+    val apiKey = settingsViewModel.apiKey
 
-    // Determinar la pantalla inicial
-    val startDestination = Screen.Login.route
+    // Estado para el saludo y frases motivacionales
+    val greeting = userProfileManager.getGreeting()
+    val quote = motivationalQuotesService.getRandomQuote()
+    val quotesEnabled by motivationalQuotesService.quotesEnabled.collectAsState()
 
+    // Determinar la pantalla inicial basada en autenticación y API Key
+    val startDestination = when {
+        !isAuthenticated -> Screen.Login.route
+        apiKey.isBlank() -> Screen.ApiKeySetup.route
+        else -> Screen.Home.route
+    }
+
+    // Efecto para redirigir al inicio de sesión si no está autenticado
+    LaunchedEffect(isAuthenticated) {
+        if (!isAuthenticated) {
+            navController.navigate(Screen.Login.route) {
+                popUpTo(0) { inclusive = true }
+            }
+        }
+    }
+
+    // Obtener la ruta actual
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route ?: ""
+
+    // Definir los elementos de la barra de navegación
     val bottomNavItems = listOf(
         BottomNavItem(
             route = Screen.Home.route,
@@ -83,29 +112,58 @@ fun MainNavigation(
         )
     )
 
+    // Determinar si se debe mostrar la barra de navegación
+    val showBottomBar = isAuthenticated && apiKey.isNotBlank() &&
+            (currentRoute == Screen.Home.route ||
+                    currentRoute == Screen.Camera.route ||
+                    currentRoute == Screen.Settings.route)
+
     Scaffold(
+        topBar = {
+            // Solo mostrar el saludo en las pantallas principales
+            if (showBottomBar) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Saludo personalizado
+                    Text(
+                        text = greeting,
+                        style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+                    )
+
+                    // Frase motivacional si está activada
+                    if (quotesEnabled && quote.isNotEmpty()) {
+                        Text(
+                            text = "\"$quote\"",
+                            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 32.dp, vertical = 4.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+            }
+        },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         bottomBar = {
-            val navBackStackEntry by navController.currentBackStackEntryAsState()
-            val currentDestination = navBackStackEntry?.destination
-
-            // Mostrar barra de navegación solo en las pantallas principales y si el usuario está autenticado
-            val showBottomBar = isAuthenticated && apiKey.isNotEmpty() && bottomNavItems.any { item ->
-                currentDestination?.hierarchy?.any { it.route == item.route } == true
-            }
-
             if (showBottomBar) {
                 NavigationBar {
                     bottomNavItems.forEach { item ->
                         NavigationBarItem(
                             icon = { Icon(item.icon, contentDescription = item.title) },
                             label = { Text(item.title) },
-                            selected = currentDestination?.hierarchy?.any { it.route == item.route } == true,
+                            selected = currentRoute == item.route,
                             onClick = {
-                                navController.navigate(item.route) {
-                                    popUpTo(navController.graph.findStartDestination().id)
-                                    launchSingleTop = true
-                                    restoreState = true
+                                if (currentRoute != item.route) {
+                                    navController.navigate(item.route) {
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
                                 }
                             }
                         )
@@ -121,12 +179,12 @@ fun MainNavigation(
         ) {
             // Pantalla de inicio de sesión
             composable(Screen.Login.route) {
-                LoginScreen(navController)
+                LoginScreen(navController = navController)
             }
 
             // Pantalla de configuración inicial
             composable(Screen.ApiKeySetup.route) {
-                ApiKeySetupScreen(navController)
+                ApiKeySetupScreen(navController = navController)
             }
 
             // Pantallas principales
@@ -139,7 +197,7 @@ fun MainNavigation(
             }
 
             composable(Screen.Camera.route) {
-                CameraScreen(navController)
+                CameraScreen(navController = navController)
             }
 
             composable(Screen.Settings.route) {
@@ -160,7 +218,7 @@ fun MainNavigation(
                 )
             ) { backStackEntry ->
                 val imageUri = backStackEntry.arguments?.getString("imageUri") ?: return@composable
-                DocumentTypeScreen(navController, imageUri)
+                DocumentTypeScreen(navController = navController, imageUriString = imageUri)
             }
 
             composable(
@@ -176,7 +234,7 @@ fun MainNavigation(
             ) { backStackEntry ->
                 val documentType = backStackEntry.arguments?.getString("documentType") ?: return@composable
                 val imageUri = backStackEntry.arguments?.getString("imageUri") ?: return@composable
-                ProcessingScreen(navController, documentType, imageUri)
+                ProcessingScreen(navController = navController, documentTypeString = documentType, imageUriString = imageUri)
             }
 
             // Pantallas de detalle y exportación
@@ -189,7 +247,7 @@ fun MainNavigation(
                 )
             ) { backStackEntry ->
                 val documentId = backStackEntry.arguments?.getString("documentId") ?: return@composable
-                DocumentDetailsScreen(navController, documentId)
+                DocumentDetailsScreen(navController = navController, documentId = documentId)
             }
 
             composable(
@@ -201,15 +259,12 @@ fun MainNavigation(
                 )
             ) { backStackEntry ->
                 val documentId = backStackEntry.arguments?.getString("documentId") ?: return@composable
-                ExportScreen(navController, documentId)
+                ExportScreen(navController = navController, documentId = documentId)
             }
 
             // Pantalla de diagnóstico
             composable(Screen.Diagnostic.route) {
-                // Usar ViewModels específicos para evitar problemas de compatibilidad
-                val documentViewModel = hiltViewModel<com.example.smartlens.viewmodel.DocumentViewModel>()
-
-                // Crear OcrService y OcrTester usando el factory
+                val documentViewModel = hiltViewModel<DocumentViewModel>()
                 val ocrService = OcrServiceFactory.create(context)
                 val ocrTester = OcrTester(context, ocrService)
 
