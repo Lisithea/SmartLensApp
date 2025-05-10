@@ -1,6 +1,7 @@
 package com.example.smartlens.ui.screens
 
 import android.net.Uri
+import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -22,6 +23,7 @@ import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.example.smartlens.model.*
+import com.example.smartlens.ui.components.LocalSnackbarManager
 import com.example.smartlens.ui.navigation.Screen
 import com.example.smartlens.viewmodel.DocumentViewModel
 
@@ -34,6 +36,7 @@ fun DocumentDetailsScreen(
 ) {
     val currentDocument by viewModel.currentDocument.collectAsState()
     val processingState by viewModel.processingState.collectAsState()
+    val snackbarManager = LocalSnackbarManager.current
 
     // Cargar documento por ID
     LaunchedEffect(documentId) {

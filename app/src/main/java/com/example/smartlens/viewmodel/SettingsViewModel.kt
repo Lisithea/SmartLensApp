@@ -34,10 +34,15 @@ class SettingsViewModel @Inject constructor(
     private val _isDarkTheme = MutableStateFlow(ThemeManager.isDarkMode.value)
     val isDarkTheme: StateFlow<Boolean> = _isDarkTheme
 
+    // Estado para el status de la API Key
+    private val _apiKeyStatus = MutableStateFlow<ApiKeyStatus>(ApiKeyStatus.Unknown)
+    val apiKeyStatus: StateFlow<ApiKeyStatus> = _apiKeyStatus
+
     // Bandera para saber si se cambió el idioma
     private var languageChanged = false
 
-    private val preferences = context.getSharedPreferences("smartlens_settings", Context.MODE_PRIVATE)
+    private val preferences =
+        context.getSharedPreferences("smartlens_settings", Context.MODE_PRIVATE)
 
     init {
         // Inicializar ThemeManager
@@ -52,7 +57,70 @@ class SettingsViewModel @Inject constructor(
             _isDarkTheme.value = isDark
         }
 
-        Log.d("SettingsViewModel", "API Key: ${_apiKey.value}, Language: ${_selectedLanguage.value}, Dark Theme: ${_isDarkTheme.value}")
+        // Verificar estado inicial de la API Key
+        checkInitialApiKeyStatus()
+
+        Log.d(
+            "SettingsViewModel",
+            "API Key: ${_apiKey.value}, Language: ${_selectedLanguage.value}, Dark Theme: ${_isDarkTheme.value}"
+        )
+    }
+
+    // Estados posibles de la API Key
+    sealed class ApiKeyStatus {
+        object Unknown : ApiKeyStatus()
+        object Valid : ApiKeyStatus()
+        data class Invalid(val reason: String) : ApiKeyStatus()
+        object Missing : ApiKeyStatus()
+        object TestMode : ApiKeyStatus()
+    }
+
+    /**
+     * Verificación inicial del estado de la API Key
+     */
+    private fun checkInitialApiKeyStatus() {
+        viewModelScope.launch {
+            if (_apiKey.value.isBlank()) {
+                _apiKeyStatus.value = ApiKeyStatus.Missing
+            } else if (_apiKey.value == "TEST_MODE_API_KEY") {
+                _apiKeyStatus.value = ApiKeyStatus.TestMode
+            } else {
+                // No validamos directamente al inicio para evitar consumo innecesario
+                _apiKeyStatus.value = ApiKeyStatus.Unknown
+            }
+        }
+    }
+
+    /**
+     * Valida la API Key con el servicio Gemini
+     */
+    fun validateApiKey() {
+        viewModelScope.launch {
+            val key = _apiKey.value
+
+            if (key.isBlank()) {
+                _apiKeyStatus.value = ApiKeyStatus.Missing
+                return@launch
+            }
+
+            if (key == "TEST_MODE_API_KEY") {
+                _apiKeyStatus.value = ApiKeyStatus.TestMode
+                return@launch
+            }
+
+            try {
+                val (isValid, reason) = geminiService.verifyApiKey(key)
+
+                if (isValid) {
+                    _apiKeyStatus.value = ApiKeyStatus.Valid
+                } else {
+                    _apiKeyStatus.value = ApiKeyStatus.Invalid(reason)
+                }
+            } catch (e: Exception) {
+                Log.e("SettingsViewModel", "Error al validar API Key: ${e.message}", e)
+                _apiKeyStatus.value = ApiKeyStatus.Invalid(e.message ?: "Error desconocido")
+            }
+        }
     }
 
     /**
@@ -71,6 +139,16 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             geminiService.saveApiKey(key)
             _apiKey.value = key
+
+            // Verificar inmediatamente el estado de la nueva API Key
+            if (key.isBlank()) {
+                _apiKeyStatus.value = ApiKeyStatus.Missing
+            } else if (key == "TEST_MODE_API_KEY") {
+                _apiKeyStatus.value = ApiKeyStatus.TestMode
+            } else {
+                _apiKeyStatus.value = ApiKeyStatus.Unknown
+            }
+
             Log.d("SettingsViewModel", "Saved API Key: $key")
         }
     }
@@ -87,7 +165,8 @@ class SettingsViewModel @Inject constructor(
                 val updatedContext = LanguageHelper.updateLanguage(context, language)
 
                 // Mostrar un Toast para indicar que se cambió el idioma
-                Toast.makeText(updatedContext, "Idioma cambiado a $language", Toast.LENGTH_SHORT).show()
+                Toast.makeText(updatedContext, "Idioma cambiado a $language", Toast.LENGTH_SHORT)
+                    .show()
 
                 // Si el contexto es una actividad, recrearla para aplicar el cambio completamente
                 if (context is Activity) {

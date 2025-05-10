@@ -207,7 +207,7 @@ fun MainNavigation(
 
             // Flujo de procesamiento de documentos
             composable(
-                route = "${Screen.DocumentType.route}/{imageUri}",
+                route = Screen.DocumentType.route,
                 arguments = listOf(
                     navArgument("imageUri") {
                         type = NavType.StringType
@@ -219,7 +219,7 @@ fun MainNavigation(
             }
 
             composable(
-                route = "${Screen.Processing.route}/{documentType}/{imageUri}",
+                route = Screen.Processing.route,
                 arguments = listOf(
                     navArgument("documentType") {
                         type = NavType.StringType

@@ -364,8 +364,9 @@ private fun takePhoto(
 // Función para navegar a la pantalla de selección de tipo de documento
 private fun navigateToDocumentType(navController: NavController, uriString: String) {
     try {
-        Log.d("CameraScreen", "Navegando a DocumentTypeScreen con URI: $uriString")
-        navController.navigate("${Screen.DocumentType.route}/$uriString")
+        val encodedUri = Uri.encode(uriString) // Codificar el URI
+        Log.d("CameraScreen", "Navegando a DocumentTypeScreen con URI: $encodedUri")
+        navController.navigate("${Screen.DocumentType.route}/$encodedUri")
     } catch (e: Exception) {
         Log.e("CameraScreen", "Error al navegar: ${e.message}", e)
     }

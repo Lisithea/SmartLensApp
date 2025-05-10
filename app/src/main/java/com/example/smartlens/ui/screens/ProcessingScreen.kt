@@ -18,7 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -50,9 +49,11 @@ fun ProcessingScreen(
     val snackbarManager = LocalSnackbarManager.current
     val coroutineScope = rememberCoroutineScope()
 
+    // Parsear parámetros
     val documentType = try {
         DocumentType.valueOf(documentTypeString)
     } catch (e: Exception) {
+        Log.e(TAG, "Error al parsear tipo de documento: $documentTypeString", e)
         DocumentType.UNKNOWN
     }
 
@@ -61,6 +62,7 @@ fun ProcessingScreen(
     val currentDocument by viewModel.currentDocument.collectAsState()
     val extractedText by viewModel.extractedText.collectAsState()
     val structuredData by viewModel.structuredData.collectAsState()
+    val isProcessing by viewModel.isProcessing.collectAsState()
 
     // Estado de animación
     var currentStep by remember { mutableStateOf(1) }
@@ -77,6 +79,7 @@ fun ProcessingScreen(
     var hasError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
     var isProcessingCompleted by remember { mutableStateOf(false) }
+    var hasTriedProcessing by remember { mutableStateOf(false) }
 
     // Verificador del estado de procesamiento actual
     val processingStateText = remember(processingState) {
@@ -105,10 +108,11 @@ fun ProcessingScreen(
 
     // Iniciar procesamiento si no está ya en curso o completado
     LaunchedEffect(key1 = imageUri, key2 = documentType) {
-        if (!isProcessingCompleted && processingState !is DocumentProcessingState.DocumentReady) {
-            Log.d(TAG, "Iniciando procesamiento. Estado: $processingState, Tipo: $documentType")
+        if (!isProcessingCompleted && !hasTriedProcessing) {
+            Log.d(TAG, "⚠️ Iniciando procesamiento. Estado: $processingState, Tipo: $documentType")
             hasError = false
             processing = true
+            hasTriedProcessing = true
 
             snackbarManager?.showInfo("Procesando documento...")
 
@@ -135,16 +139,19 @@ fun ProcessingScreen(
             elapsedTime++
 
             // Si ha pasado demasiado tiempo, podríamos considerar que algo salió mal
-            if (elapsedTime > 60 && processingState !is DocumentProcessingState.DocumentReady) {
+            if (elapsedTime > 60 && !isProcessingCompleted && isProcessing) {
                 hasError = true
-                errorMessage = "El procesamiento está tardando demasiado. Intente nuevamente."
+                errorMessage = "El procesamiento está tardando demasiado. Puede haber un problema con la API Key o la conexión a Internet."
                 processing = false
+                viewModel.cancelProcessing()
             }
         }
     }
 
     // Manejar la animación de procesamiento y cambios de estado
     LaunchedEffect(key1 = processingState) {
+        Log.d(TAG, "⚠️ Estado de procesamiento actualizado: $processingState")
+
         when (processingState) {
             is DocumentProcessingState.ExtractingText -> {
                 Log.d(TAG, "Estado: Extrayendo texto")
@@ -170,7 +177,7 @@ fun ProcessingScreen(
                 isProcessingCompleted = true
                 snackbarManager?.showSuccess("¡Documento procesado correctamente!")
 
-                delay(1500) // Esperar un momento antes de navegar para mostrar el progreso completo
+                delay(1000) // Esperar un momento antes de navegar para mostrar el progreso completo
                 currentDocument?.let { document ->
                     Log.d(TAG, "Navegando a detalles del documento: ${document.id}")
                     navController.navigate("${Screen.DocumentDetails.route}/${document.id}") {
@@ -179,9 +186,10 @@ fun ProcessingScreen(
                 }
             }
             is DocumentProcessingState.Error -> {
-                Log.e(TAG, "Error en procesamiento: ${(processingState as DocumentProcessingState.Error).message}")
+                val error = (processingState as DocumentProcessingState.Error).message
+                Log.e(TAG, "Error en procesamiento: $error")
                 hasError = true
-                errorMessage = (processingState as DocumentProcessingState.Error).message
+                errorMessage = error
                 processing = false // Detener el contador de tiempo
                 snackbarManager?.showError("Error: $errorMessage")
             }
@@ -284,6 +292,64 @@ fun ProcessingScreen(
                                 onClick = { navController.navigateUp() }
                             ) {
                                 Text(stringResource(R.string.back))
+                            }
+                        }
+
+                        // Información adicional para depuración
+                        Spacer(modifier = Modifier.height(24.dp))
+
+                        OutlinedButton(
+                            onClick = { showRawData = !showRawData }
+                        ) {
+                            Text(if (showRawData) "Ocultar información de depuración" else "Mostrar información de depuración")
+                        }
+
+                        if (showRawData) {
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                shape = MaterialTheme.shapes.medium,
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = "Estado de procesamiento: $processingState",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Text(
+                                        text = "Tipo de documento: $documentType",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Text(
+                                        text = "URI de imagen: $imageUri",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Text(
+                                        text = "Documento actual: ${currentDocument?.id ?: "Ninguno"}",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+
+                                    if (extractedText.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        Text(
+                                            text = "Texto extraído (${extractedText.length} caracteres):\n${extractedText.take(300)}...",
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

@@ -25,6 +25,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import java.util.UUID
 
+
+/**
+ * ViewModel para la gestión de documentos
+ * Actualización: Agregado estado para controlar el procesamiento
+ */
 @HiltViewModel
 class DocumentViewModel @Inject constructor(
     private val repository: DocumentRepository,
@@ -43,6 +48,10 @@ class DocumentViewModel @Inject constructor(
     // Estado del procesamiento
     private val _processingState = MutableStateFlow<DocumentProcessingState>(DocumentProcessingState.Idle)
     val processingState: StateFlow<DocumentProcessingState> = _processingState
+
+    // Estado de procesamiento activo
+    private val _isProcessing = MutableStateFlow(false)
+    val isProcessing: StateFlow<Boolean> = _isProcessing
 
     // Texto extraído por OCR
     private val _extractedText = MutableStateFlow("")
@@ -196,6 +205,7 @@ class DocumentViewModel @Inject constructor(
             try {
                 Log.d(TAG, "Iniciando procesamiento de imagen con CV: $imageUri")
                 _processingState.value = DocumentProcessingState.Capturing
+                _isProcessing.value = true
 
                 // Fase 1: Procesar la imagen con Computer Vision
                 val enhancedImageUri = imageProcessingService.enhanceImageWithComputerVision(imageUri)
@@ -231,6 +241,7 @@ class DocumentViewModel @Inject constructor(
                 Log.e(TAG, "Error en processImage: ${e.message}", e)
                 _processingState.value = DocumentProcessingState.Error(e.message ?: "Error desconocido")
                 _userMessage.value = context.getString(R.string.ocr_error)
+                _isProcessing.value = false
             }
         }
     }
@@ -263,6 +274,7 @@ class DocumentViewModel @Inject constructor(
             try {
                 Log.d(TAG, "Iniciando procesamiento de documento tipo: $documentType")
                 _processingState.value = DocumentProcessingState.ProcessingDocument(documentType)
+                _isProcessing.value = true
 
                 // Obtener URI de la imagen procesada, o usar la temporal si no está disponible
                 val imageUri = _processedImageUri.value ?: tempImageUri
@@ -270,6 +282,7 @@ class DocumentViewModel @Inject constructor(
                     Log.e(TAG, "Error: No hay imagen disponible para procesar")
                     _processingState.value = DocumentProcessingState.Error("No hay imagen disponible para procesar")
                     _userMessage.value = "Error: No hay imagen disponible"
+                    _isProcessing.value = false
                     return@launch
                 }
 
@@ -288,6 +301,7 @@ class DocumentViewModel @Inject constructor(
                             Log.e(TAG, "Error: No se pudo extraer texto de la imagen")
                             _processingState.value = DocumentProcessingState.Error("No se pudo extraer texto de la imagen")
                             _userMessage.value = context.getString(R.string.ocr_error)
+                            _isProcessing.value = false
                             return@launch
                         }
 
@@ -296,6 +310,7 @@ class DocumentViewModel @Inject constructor(
                         Log.e(TAG, "Error al extraer texto: ${e.message}", e)
                         _processingState.value = DocumentProcessingState.Error("Error al extraer texto: ${e.message}")
                         _userMessage.value = context.getString(R.string.ocr_error)
+                        _isProcessing.value = false
                         return@launch
                     }
                 }
@@ -334,6 +349,7 @@ class DocumentViewModel @Inject constructor(
 
                     _processingState.value = DocumentProcessingState.Error(e.message ?: errorMessage)
                     _userMessage.value = errorMessage
+                    _isProcessing.value = false
                     return@launch
                 }
 
@@ -345,6 +361,7 @@ class DocumentViewModel @Inject constructor(
                     Log.e(TAG, "Error al guardar documento: ${e.message}", e)
                     _processingState.value = DocumentProcessingState.Error("Error al guardar documento: ${e.message}")
                     _userMessage.value = "Error al guardar documento"
+                    _isProcessing.value = false
                     return@launch
                 }
 
@@ -353,6 +370,7 @@ class DocumentViewModel @Inject constructor(
                 _currentDocument.value = document
                 _processingState.value = DocumentProcessingState.DocumentReady(document)
                 _userMessage.value = context.getString(R.string.document_saved)
+                _isProcessing.value = false
 
                 // Recargar documentos recientes
                 loadRecentDocuments()
@@ -361,6 +379,7 @@ class DocumentViewModel @Inject constructor(
                 Log.e(TAG, "Error general en processDocument: ${e.message}", e)
                 _processingState.value = DocumentProcessingState.Error(e.message ?: "Error desconocido")
                 _userMessage.value = context.getString(R.string.processing_error_generic)
+                _isProcessing.value = false
             }
         }
     }
@@ -371,6 +390,8 @@ class DocumentViewModel @Inject constructor(
     fun cancelProcessing() {
         viewModelScope.launch {
             try {
+                Log.d(TAG, "Cancelando procesamiento...")
+
                 currentWorkId?.let {
                     workManager.cancelWorkById(it)
                 }
@@ -380,6 +401,7 @@ class DocumentViewModel @Inject constructor(
                 _structuredData.value = emptyMap()
                 tempImageUri = null
                 _processedImageUri.value = null
+                _isProcessing.value = false
 
                 Log.d(TAG, "Procesamiento cancelado")
             } catch (e: Exception) {
@@ -441,6 +463,7 @@ class DocumentViewModel @Inject constructor(
         _customFileName.value = ""
         _processedImageUri.value = null
         tempImageUri = null
+        _isProcessing.value = false
     }
 
     override fun onCleared() {

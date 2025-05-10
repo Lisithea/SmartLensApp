@@ -14,6 +14,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import android.util.Log
 
+/**
+ * Servicio para procesar documentos con Gemini AI
+ * Versión mejorada con mejor manejo de errores y diagnósticos
+ */
 @Singleton
 class GeminiService @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -23,13 +27,58 @@ class GeminiService @Inject constructor(
     private val preferences: SharedPreferences = context.getSharedPreferences("smartlens_settings", Context.MODE_PRIVATE)
 
     // Obtener API Key de las preferencias
-    private fun getApiKey(): String {
-        return preferences.getString("api_key", "") ?: ""
+    fun getApiKey(): String {
+        val apiKey = preferences.getString("api_key", "") ?: ""
+        Log.d(TAG, "Obteniendo API Key: ${if (apiKey.isBlank()) "No configurada" else "Configurada (${apiKey.length} caracteres)"}")
+        return apiKey
     }
 
     // Guardar API Key en las preferencias
     fun saveApiKey(key: String) {
         preferences.edit().putString("api_key", key).apply()
+        Log.d(TAG, "API Key guardada: ${if (key.isBlank()) "Vacía" else "${key.length} caracteres"}")
+    }
+
+    /**
+     * Verifica si una API Key es válida
+     * @return true si la API Key es válida
+     */
+    suspend fun verifyApiKey(apiKey: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) {
+            return@withContext Pair(false, "API Key no proporcionada")
+        }
+
+        // Comprobar si es modo de prueba
+        if (apiKey == "TEST_MODE_API_KEY") {
+            return@withContext Pair(true, "Modo prueba")
+        }
+
+        try {
+            // Crear modelo generativo con la API Key proporcionada
+            val generativeModel = GenerativeModel(
+                modelName = "gemini-1.5-pro",
+                apiKey = apiKey
+            )
+
+            // Realizar una consulta simple para verificar
+            val prompt = "Responde con 'OK' si esta API Key es válida."
+            val inputContent = content { text(prompt) }
+            val response = generativeModel.generateContent(inputContent)
+
+            // Si llegamos aquí sin excepción, la clave es válida
+            return@withContext Pair(true, "")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error al verificar API Key: ${e.message}", e)
+            // Determinar la razón del error
+            val reason = when {
+                e.message?.contains("invalid api key", ignoreCase = true) == true -> "API Key no válida"
+                e.message?.contains("quota", ignoreCase = true) == true -> "Cuota excedida"
+                e.message?.contains("permission", ignoreCase = true) == true -> "Permisos insuficientes"
+                e.message?.contains("network", ignoreCase = true) == true -> "Error de red"
+                else -> "Error de validación: ${e.message}"
+            }
+            return@withContext Pair(false, reason)
+        }
     }
 
     /**
@@ -38,10 +87,11 @@ class GeminiService @Inject constructor(
     suspend fun processInvoice(text: String, imageUri: Uri?): Invoice = withContext(Dispatchers.IO) {
         val apiKey = getApiKey()
         if (apiKey.isBlank()) {
+            Log.e(TAG, "Error: API Key de Gemini no configurada")
             throw IllegalStateException("API Key de Gemini no configurada. Por favor, configure la API Key en Ajustes.")
         }
 
-        Log.d(TAG, "Procesando factura con Gemini. Texto: ${text.take(100)}...")
+        Log.d(TAG, "Procesando factura con Gemini. Texto: ${text.take(100)}... (${text.length} caracteres)")
 
         val prompt = """
             Analiza el siguiente texto OCR de una factura y extrae los datos estructurados.
@@ -79,13 +129,20 @@ class GeminiService @Inject constructor(
               "barcode": ""
             }
             
-            Asegúrate de que el JSON sea válido y respete esta estructura exacta.
+            Si no puedes identificar algún campo, déjalo vacío o en 0 según corresponda.
+            Es muy importante que el JSON sea válido y respete esta estructura exacta. 
+            No agregues ningún texto adicional, solo el JSON.
         """.trimIndent()
 
-        val generativeModel = GenerativeModel(
-            modelName = "gemini-1.5-pro",
-            apiKey = apiKey
-        )
+        val generativeModel = try {
+            GenerativeModel(
+                modelName = "gemini-1.5-pro",
+                apiKey = apiKey
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error al crear modelo generativo: ${e.message}", e)
+            throw IllegalStateException("Error al inicializar Gemini API: ${e.message}")
+        }
 
         val inputContent = content { text(prompt) }
 
@@ -93,13 +150,33 @@ class GeminiService @Inject constructor(
             Log.d(TAG, "Enviando prompt a Gemini API")
             val response = generativeModel.generateContent(inputContent)
 
+            if (response.text == null) {
+                Log.e(TAG, "Respuesta de Gemini vacía")
+                throw IllegalStateException("El modelo no generó ninguna respuesta")
+            }
+
             Log.d(TAG, "Respuesta recibida de Gemini. Procesando JSON...")
 
             // Extraer el JSON de la respuesta
-            val jsonText = extractJsonFromResponse(response.text ?: "")
-            val invoiceData = gson.fromJson(jsonText, InvoiceData::class.java)
+            val jsonText = extractJsonFromResponse(response.text!!)
+            Log.d(TAG, "JSON extraído: ${jsonText.take(100)}...")
 
-            Log.d(TAG, "JSON procesado correctamente: ${jsonText.take(100)}...")
+            // Deserializar el JSON
+            val invoiceData = try {
+                gson.fromJson(jsonText, InvoiceData::class.java)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error al deserializar JSON: ${e.message}", e)
+                Log.e(TAG, "JSON recibido: $jsonText")
+                throw IllegalStateException("Error al procesar la respuesta de Gemini: ${e.message}")
+            }
+
+            // Validar datos mínimos
+            if (invoiceData.invoiceNumber.isBlank() || invoiceData.date.isBlank()) {
+                Log.e(TAG, "Datos de factura incompletos: Número=${invoiceData.invoiceNumber}, Fecha=${invoiceData.date}")
+                throw IllegalStateException("No se pudieron extraer los datos mínimos necesarios de la factura")
+            }
+
+            Log.d(TAG, "JSON procesado correctamente. Factura: ${invoiceData.invoiceNumber}")
 
             // Convertir a modelo Invoice
             return@withContext Invoice(
@@ -108,9 +185,28 @@ class GeminiService @Inject constructor(
                 invoiceNumber = invoiceData.invoiceNumber,
                 date = invoiceData.date,
                 dueDate = invoiceData.dueDate,
-                supplier = invoiceData.supplier,
-                client = invoiceData.client,
-                items = invoiceData.items,
+                supplier = Company(
+                    name = invoiceData.supplier.name,
+                    taxId = invoiceData.supplier.taxId,
+                    address = invoiceData.supplier.address,
+                    contactInfo = invoiceData.supplier.contactInfo
+                ),
+                client = Company(
+                    name = invoiceData.client.name,
+                    taxId = invoiceData.client.taxId,
+                    address = invoiceData.client.address,
+                    contactInfo = invoiceData.client.contactInfo
+                ),
+                items = invoiceData.items.map { item ->
+                    InvoiceItem(
+                        code = item.code,
+                        description = item.description,
+                        quantity = item.quantity,
+                        unitPrice = item.unitPrice,
+                        totalPrice = item.totalPrice,
+                        taxRate = item.taxRate
+                    )
+                },
                 subtotal = invoiceData.subtotal,
                 taxAmount = invoiceData.taxAmount,
                 totalAmount = invoiceData.totalAmount,
@@ -119,7 +215,7 @@ class GeminiService @Inject constructor(
                 barcode = invoiceData.barcode
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Error en procesamiento de factura con Gemini: ${e.message}", e)
+            Log.e(TAG, "Error al procesar factura con Gemini: ${e.message}", e)
             throw IllegalStateException("Error al procesar factura: ${e.message}")
         }
     }
@@ -130,6 +226,7 @@ class GeminiService @Inject constructor(
     suspend fun processDeliveryNote(text: String, imageUri: Uri?): DeliveryNote = withContext(Dispatchers.IO) {
         val apiKey = getApiKey()
         if (apiKey.isBlank()) {
+            Log.e(TAG, "Error: API Key de Gemini no configurada")
             throw IllegalStateException("API Key de Gemini no configurada. Por favor, configure la API Key en Ajustes.")
         }
 
@@ -165,13 +262,20 @@ class GeminiService @Inject constructor(
               "observations": ""
             }
             
-            Asegúrate de que el JSON sea válido y respete esta estructura exacta.
+            Si no puedes identificar algún campo, déjalo vacío o en 0 según corresponda.
+            Es muy importante que el JSON sea válido y respete esta estructura exacta.
+            No agregues ningún texto adicional, solo el JSON.
         """.trimIndent()
 
-        val generativeModel = GenerativeModel(
-            modelName = "gemini-1.5-pro",
-            apiKey = apiKey
-        )
+        val generativeModel = try {
+            GenerativeModel(
+                modelName = "gemini-1.5-pro",
+                apiKey = apiKey
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error al crear modelo generativo: ${e.message}", e)
+            throw IllegalStateException("Error al inicializar Gemini API: ${e.message}")
+        }
 
         val inputContent = content { text(prompt) }
 
@@ -179,13 +283,33 @@ class GeminiService @Inject constructor(
             Log.d(TAG, "Enviando prompt a Gemini API")
             val response = generativeModel.generateContent(inputContent)
 
+            if (response.text == null) {
+                Log.e(TAG, "Respuesta de Gemini vacía")
+                throw IllegalStateException("El modelo no generó ninguna respuesta")
+            }
+
             Log.d(TAG, "Respuesta recibida de Gemini. Procesando JSON...")
 
             // Extraer el JSON de la respuesta
-            val jsonText = extractJsonFromResponse(response.text ?: "")
-            val deliveryData = gson.fromJson(jsonText, DeliveryNoteData::class.java)
+            val jsonText = extractJsonFromResponse(response.text!!)
+            Log.d(TAG, "JSON extraído: ${jsonText.take(100)}...")
 
-            Log.d(TAG, "JSON procesado correctamente: ${jsonText.take(100)}...")
+            // Deserializar el JSON
+            val deliveryData = try {
+                gson.fromJson(jsonText, DeliveryNoteData::class.java)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error al deserializar JSON: ${e.message}", e)
+                Log.e(TAG, "JSON recibido: $jsonText")
+                throw IllegalStateException("Error al procesar la respuesta de Gemini: ${e.message}")
+            }
+
+            // Validar datos mínimos
+            if (deliveryData.deliveryNoteNumber.isBlank() || deliveryData.date.isBlank()) {
+                Log.e(TAG, "Datos de albarán incompletos: Número=${deliveryData.deliveryNoteNumber}, Fecha=${deliveryData.date}")
+                throw IllegalStateException("No se pudieron extraer los datos mínimos necesarios del albarán")
+            }
+
+            Log.d(TAG, "JSON procesado correctamente. Albarán: ${deliveryData.deliveryNoteNumber}")
 
             // Convertir a modelo DeliveryNote
             return@withContext DeliveryNote(
@@ -193,16 +317,34 @@ class GeminiService @Inject constructor(
                 rawTextContent = text,
                 deliveryNoteNumber = deliveryData.deliveryNoteNumber,
                 date = deliveryData.date,
-                origin = deliveryData.origin,
-                destination = deliveryData.destination,
+                origin = Location(
+                    name = deliveryData.origin.name,
+                    address = deliveryData.origin.address,
+                    contactPerson = deliveryData.origin.contactPerson,
+                    contactPhone = deliveryData.origin.contactPhone
+                ),
+                destination = Location(
+                    name = deliveryData.destination.name,
+                    address = deliveryData.destination.address,
+                    contactPerson = deliveryData.destination.contactPerson,
+                    contactPhone = deliveryData.destination.contactPhone
+                ),
                 carrier = deliveryData.carrier,
-                items = deliveryData.items,
+                items = deliveryData.items.map { item ->
+                    DeliveryItem(
+                        code = item.code,
+                        description = item.description,
+                        quantity = item.quantity,
+                        packageType = item.packageType,
+                        weight = item.weight
+                    )
+                },
                 totalPackages = deliveryData.totalPackages,
                 totalWeight = deliveryData.totalWeight,
                 observations = deliveryData.observations
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Error en procesamiento de albarán con Gemini: ${e.message}", e)
+            Log.e(TAG, "Error al procesar albarán con Gemini: ${e.message}", e)
             throw IllegalStateException("Error al procesar albarán: ${e.message}")
         }
     }
@@ -213,6 +355,7 @@ class GeminiService @Inject constructor(
     suspend fun processWarehouseLabel(text: String, imageUri: Uri?): WarehouseLabel = withContext(Dispatchers.IO) {
         val apiKey = getApiKey()
         if (apiKey.isBlank()) {
+            Log.e(TAG, "Error: API Key de Gemini no configurada")
             throw IllegalStateException("API Key de Gemini no configurada. Por favor, configure la API Key en Ajustes.")
         }
 
@@ -246,13 +389,20 @@ class GeminiService @Inject constructor(
               "barcode": ""
             }
             
-            Asegúrate de que el JSON sea válido y respete esta estructura exacta.
+            Si no puedes identificar algún campo, déjalo vacío o en 0 según corresponda.
+            Es muy importante que el JSON sea válido y respete esta estructura exacta.
+            No agregues ningún texto adicional, solo el JSON.
         """.trimIndent()
 
-        val generativeModel = GenerativeModel(
-            modelName = "gemini-1.5-pro",
-            apiKey = apiKey
-        )
+        val generativeModel = try {
+            GenerativeModel(
+                modelName = "gemini-1.5-pro",
+                apiKey = apiKey
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error al crear modelo generativo: ${e.message}", e)
+            throw IllegalStateException("Error al inicializar Gemini API: ${e.message}")
+        }
 
         val inputContent = content { text(prompt) }
 
@@ -260,13 +410,33 @@ class GeminiService @Inject constructor(
             Log.d(TAG, "Enviando prompt a Gemini API")
             val response = generativeModel.generateContent(inputContent)
 
+            if (response.text == null) {
+                Log.e(TAG, "Respuesta de Gemini vacía")
+                throw IllegalStateException("El modelo no generó ninguna respuesta")
+            }
+
             Log.d(TAG, "Respuesta recibida de Gemini. Procesando JSON...")
 
             // Extraer el JSON de la respuesta
-            val jsonText = extractJsonFromResponse(response.text ?: "")
-            val labelData = gson.fromJson(jsonText, WarehouseLabelData::class.java)
+            val jsonText = extractJsonFromResponse(response.text!!)
+            Log.d(TAG, "JSON extraído: ${jsonText.take(100)}...")
 
-            Log.d(TAG, "JSON procesado correctamente: ${jsonText.take(100)}...")
+            // Deserializar el JSON
+            val labelData = try {
+                gson.fromJson(jsonText, WarehouseLabelData::class.java)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error al deserializar JSON: ${e.message}", e)
+                Log.e(TAG, "JSON recibido: $jsonText")
+                throw IllegalStateException("Error al procesar la respuesta de Gemini: ${e.message}")
+            }
+
+            // Validar datos mínimos
+            if (labelData.labelId.isBlank() || labelData.productCode.isBlank() || labelData.productName.isBlank()) {
+                Log.e(TAG, "Datos de etiqueta incompletos: ID=${labelData.labelId}, Código=${labelData.productCode}")
+                throw IllegalStateException("No se pudieron extraer los datos mínimos necesarios de la etiqueta")
+            }
+
+            Log.d(TAG, "JSON procesado correctamente. Etiqueta: ${labelData.labelId}")
 
             // Convertir a modelo WarehouseLabel
             return@withContext WarehouseLabel(
@@ -282,7 +452,7 @@ class GeminiService @Inject constructor(
                 barcode = labelData.barcode
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Error en procesamiento de etiqueta con Gemini: ${e.message}", e)
+            Log.e(TAG, "Error al procesar etiqueta con Gemini: ${e.message}", e)
             throw IllegalStateException("Error al procesar etiqueta: ${e.message}")
         }
     }
@@ -300,37 +470,68 @@ class GeminiService @Inject constructor(
 
     // Clases de datos para el parsing del JSON
     private data class InvoiceData(
-        val invoiceNumber: String,
-        val date: String,
+        val invoiceNumber: String = "",
+        val date: String = "",
         val dueDate: String? = null,
-        val supplier: Company,
-        val client: Company,
-        val items: List<InvoiceItem>,
-        val subtotal: Double,
-        val taxAmount: Double,
-        val totalAmount: Double,
+        val supplier: CompanyData = CompanyData(),
+        val client: CompanyData = CompanyData(),
+        val items: List<InvoiceItemData> = emptyList(),
+        val subtotal: Double = 0.0,
+        val taxAmount: Double = 0.0,
+        val totalAmount: Double = 0.0,
         val paymentTerms: String? = null,
         val notes: String? = null,
         val barcode: String? = null
     )
 
+    private data class CompanyData(
+        val name: String = "",
+        val taxId: String? = null,
+        val address: String? = null,
+        val contactInfo: String? = null
+    )
+
+    private data class InvoiceItemData(
+        val code: String? = null,
+        val description: String = "",
+        val quantity: Double = 0.0,
+        val unitPrice: Double = 0.0,
+        val totalPrice: Double = 0.0,
+        val taxRate: Double? = null
+    )
+
     private data class DeliveryNoteData(
-        val deliveryNoteNumber: String,
-        val date: String,
-        val origin: Location,
-        val destination: Location,
+        val deliveryNoteNumber: String = "",
+        val date: String = "",
+        val origin: LocationData = LocationData(),
+        val destination: LocationData = LocationData(),
         val carrier: String? = null,
-        val items: List<DeliveryItem>,
+        val items: List<DeliveryItemData> = emptyList(),
         val totalPackages: Int? = null,
         val totalWeight: Double? = null,
         val observations: String? = null
     )
 
+    private data class LocationData(
+        val name: String = "",
+        val address: String = "",
+        val contactPerson: String? = null,
+        val contactPhone: String? = null
+    )
+
+    private data class DeliveryItemData(
+        val code: String? = null,
+        val description: String = "",
+        val quantity: Double = 0.0,
+        val packageType: String? = null,
+        val weight: Double? = null
+    )
+
     private data class WarehouseLabelData(
-        val labelId: String,
-        val productCode: String,
-        val productName: String,
-        val quantity: Double,
+        val labelId: String = "",
+        val productCode: String = "",
+        val productName: String = "",
+        val quantity: Double = 0.0,
         val batchNumber: String? = null,
         val expirationDate: String? = null,
         val location: String? = null,

@@ -9,9 +9,17 @@ sealed class Screen(val route: String) {
     object Home : Screen("home")
     object Camera : Screen("camera")
     object Settings : Screen("settings")
-    object DocumentType : Screen("document_type")
-    object Processing : Screen("processing")
-    object DocumentDetails : Screen("document_details")
-    object Export : Screen("export")
+    object DocumentType : Screen("document_type/{imageUri}") {
+        fun createRoute(imageUri: String) = "document_type/$imageUri"
+    }
+    object Processing : Screen("processing/{documentType}/{imageUri}") {
+        fun createRoute(documentType: String, imageUri: String) = "processing/$documentType/$imageUri"
+    }
+    object DocumentDetails : Screen("document_details/{documentId}") {
+        fun createRoute(documentId: String) = "document_details/$documentId"
+    }
+    object Export : Screen("export/{documentId}") {
+        fun createRoute(documentId: String) = "export/$documentId"
+    }
     object Diagnostic : Screen("diagnostic")
 }
