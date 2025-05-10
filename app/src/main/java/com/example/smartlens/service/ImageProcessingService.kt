@@ -39,37 +39,15 @@ class ImageProcessingService @Inject constructor(
     init {
         // Intentar inicializar OpenCV de forma segura
         try {
-            // Verificar si OpenCV ya está inicializado (por SmartLensApplication)
-            if (isOpenCVInitialized()) {
-                openCVInitialized = true
-                Log.d(TAG, "OpenCV ya estaba inicializado")
+            openCVInitialized = OpenCVLoader.initDebug()
+            if (openCVInitialized) {
+                Log.d(TAG, "OpenCV inicializado correctamente")
             } else {
-                // Intentar inicializar OpenCV
-                openCVInitialized = OpenCVLoader.initDebug()
-                if (openCVInitialized) {
-                    Log.d(TAG, "OpenCV inicializado correctamente")
-                } else {
-                    Log.e(TAG, "No se pudo inicializar OpenCV")
-                    // No lanzar excepción, permitir el uso degradado de la app
-                }
+                Log.e(TAG, "No se pudo inicializar OpenCV")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error al inicializar OpenCV: ${e.message}", e)
             openCVInitialized = false
-        }
-    }
-
-    /**
-     * Verifica si OpenCV ya está inicializado
-     */
-    private fun isOpenCVInitialized(): Boolean {
-        return try {
-            // Intentar hacer una operación básica con OpenCV
-            val mat = Mat(1, 1, CvType.CV_8UC1)
-            mat.release()
-            true
-        } catch (e: Exception) {
-            false
         }
     }
 

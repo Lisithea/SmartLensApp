@@ -362,22 +362,11 @@ fun DocumentTypeScreen(
                             viewModel.setCustomFileName(customFileName)
                         }
 
-                        coroutineScope.launch {
-                            try {
-                                // Mostrar diálogo de carga
-                                snackbarManager?.showInfo("Procesando documento...")
+                        // Mostrar diálogo de carga
+                        snackbarManager?.showInfo("Procesando documento...")
 
-                                // Procesar documento
-                                viewModel.processDocument(type)
-
-                                // Navegar a la pantalla de procesamiento
-                                navController.navigate("${Screen.Processing.route}/${type.name}/${imageUriString}") {
-                                    popUpTo(Screen.Camera.route)
-                                }
-                            } catch (e: Exception) {
-                                snackbarManager?.showError("Error: ${e.message}")
-                            }
-                        }
+                        // Navegar a la pantalla de procesamiento
+                        navController.navigate("${Screen.Processing.route}/${type.name}/${imageUriString}")
                     }
                 },
                 enabled = selectedType != null && !isLoading,

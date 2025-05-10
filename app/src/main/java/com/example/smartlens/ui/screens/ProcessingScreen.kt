@@ -36,6 +36,8 @@ import com.example.smartlens.viewmodel.DocumentViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+private const val TAG = "ProcessingScreen"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProcessingScreen(
@@ -71,6 +73,24 @@ fun ProcessingScreen(
     // Estado para mostrar información detallada
     var showRawData by remember { mutableStateOf(false) }
 
+    // Estado para controlar errores y reintentos
+    var hasError by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
+    var isProcessingCompleted by remember { mutableStateOf(false) }
+
+    // Verificador del estado de procesamiento actual
+    val processingStateText = remember(processingState) {
+        when (processingState) {
+            is DocumentProcessingState.Idle -> "Iniciando procesamiento..."
+            is DocumentProcessingState.Capturing -> "Capturando imagen..."
+            is DocumentProcessingState.ExtractingText -> "Extrayendo texto..."
+            is DocumentProcessingState.ProcessingDocument -> "Analizando documento..."
+            is DocumentProcessingState.DocumentReady -> "¡Documento listo!"
+            is DocumentProcessingState.Error -> "Error: ${(processingState as DocumentProcessingState.Error).message}"
+            else -> "Procesando..."
+        }
+    }
+
     // Animaciones para efectos visuales
     val infiniteTransition = rememberInfiniteTransition(label = "processingAnimation")
     val pulseAlpha = infiniteTransition.animateFloat(
@@ -83,12 +103,28 @@ fun ProcessingScreen(
         label = "pulseAnimation"
     )
 
-    // Iniciar procesamiento si no está ya en curso
-    LaunchedEffect(key1 = imageUri) {
-        Log.d("ProcessingScreen", "Estado inicial: $processingState")
-        if (processingState !is DocumentProcessingState.DocumentReady) {
+    // Iniciar procesamiento si no está ya en curso o completado
+    LaunchedEffect(key1 = imageUri, key2 = documentType) {
+        if (!isProcessingCompleted && processingState !is DocumentProcessingState.DocumentReady) {
+            Log.d(TAG, "Iniciando procesamiento. Estado: $processingState, Tipo: $documentType")
+            hasError = false
+            processing = true
+
             snackbarManager?.showInfo("Procesando documento...")
-            viewModel.processDocument(documentType)
+
+            try {
+                // Actualizar UI para mostrar que estamos procesando
+                currentStep = 1
+                progress = 0.2f
+
+                // Iniciar el procesamiento del documento
+                viewModel.processDocument(documentType)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error al iniciar procesamiento: ${e.message}", e)
+                hasError = true
+                errorMessage = e.message ?: "Error desconocido al procesar el documento"
+                processing = false
+            }
         }
     }
 
@@ -97,18 +133,27 @@ fun ProcessingScreen(
         while (processing) {
             delay(1000) // Incrementar cada segundo
             elapsedTime++
+
+            // Si ha pasado demasiado tiempo, podríamos considerar que algo salió mal
+            if (elapsedTime > 60 && processingState !is DocumentProcessingState.DocumentReady) {
+                hasError = true
+                errorMessage = "El procesamiento está tardando demasiado. Intente nuevamente."
+                processing = false
+            }
         }
     }
 
-    // Manejar la animación de procesamiento
+    // Manejar la animación de procesamiento y cambios de estado
     LaunchedEffect(key1 = processingState) {
         when (processingState) {
             is DocumentProcessingState.ExtractingText -> {
+                Log.d(TAG, "Estado: Extrayendo texto")
                 currentStep = 1
                 progress = 0.3f
                 snackbarManager?.showInfo("Extrayendo texto del documento...")
             }
             is DocumentProcessingState.ProcessingDocument -> {
+                Log.d(TAG, "Estado: Procesando documento")
                 // Animar progreso
                 currentStep = 2
                 for (i in 30..80) {
@@ -118,23 +163,31 @@ fun ProcessingScreen(
                 snackbarManager?.showInfo("Analizando documento...")
             }
             is DocumentProcessingState.DocumentReady -> {
+                Log.d(TAG, "Estado: Documento listo")
                 currentStep = 3
                 progress = 1.0f
                 processing = false // Detener el contador de tiempo
+                isProcessingCompleted = true
                 snackbarManager?.showSuccess("¡Documento procesado correctamente!")
 
                 delay(1500) // Esperar un momento antes de navegar para mostrar el progreso completo
                 currentDocument?.let { document ->
+                    Log.d(TAG, "Navegando a detalles del documento: ${document.id}")
                     navController.navigate("${Screen.DocumentDetails.route}/${document.id}") {
                         popUpTo(Screen.Camera.route)
                     }
                 }
             }
             is DocumentProcessingState.Error -> {
+                Log.e(TAG, "Error en procesamiento: ${(processingState as DocumentProcessingState.Error).message}")
+                hasError = true
+                errorMessage = (processingState as DocumentProcessingState.Error).message
                 processing = false // Detener el contador de tiempo
-                snackbarManager?.showError("Error: ${(processingState as DocumentProcessingState.Error).message}")
+                snackbarManager?.showError("Error: $errorMessage")
             }
-            else -> {}
+            else -> {
+                // Otros estados
+            }
         }
     }
 
@@ -165,9 +218,8 @@ fun ProcessingScreen(
             contentAlignment = Alignment.Center
         ) {
             when {
-                processingState is DocumentProcessingState.Error -> {
-                    // Mostrar error
-                    val error = (processingState as DocumentProcessingState.Error).message
+                hasError -> {
+                    // Mostrar error con opción de reintentar
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -193,16 +245,46 @@ fun ProcessingScreen(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Text(
-                            text = error,
-                            style = MaterialTheme.typography.bodyMedium
+                            text = errorMessage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center
                         )
 
                         Spacer(modifier = Modifier.height(24.dp))
 
-                        Button(
-                            onClick = { navController.navigateUp() }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            Text(stringResource(R.string.back))
+                            Button(
+                                onClick = {
+                                    hasError = false
+                                    processing = true
+                                    elapsedTime = 0
+                                    currentStep = 1
+                                    progress = 0.05f
+
+                                    // Reiniciar el procesamiento
+                                    coroutineScope.launch {
+                                        try {
+                                            viewModel.processDocument(documentType)
+                                        } catch (e: Exception) {
+                                            hasError = true
+                                            errorMessage = e.message ?: "Error al reintentar"
+                                            processing = false
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Reintentar")
+                            }
+
+                            OutlinedButton(
+                                onClick = { navController.navigateUp() }
+                            ) {
+                                Text(stringResource(R.string.back))
+                            }
                         }
                     }
                 }
@@ -218,8 +300,7 @@ fun ProcessingScreen(
                     ) {
                         // Título animado con pulso
                         Text(
-                            text = stringResource(R.string.processing) + " " +
-                                    documentType.getDisplayName(),
+                            text = processingStateText,
                             style = MaterialTheme.typography.titleLarge,
                             modifier = Modifier.alpha(pulseAlpha.value)
                         )

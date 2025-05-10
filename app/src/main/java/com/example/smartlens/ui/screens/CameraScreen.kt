@@ -324,15 +324,6 @@ fun CameraScreen(
     }
 }
 
-// Función para navegar a la pantalla de selección de tipo de documento
-private fun navigateToDocumentType(navController: NavController, uriString: String) {
-    try {
-        navController.navigate("${Screen.DocumentType.route}/$uriString")
-    } catch (e: Exception) {
-        Log.e("CameraScreen", "Error al navegar: ${e.message}", e)
-    }
-}
-
 // Función para tomar una foto - ahora completamente separada de los Composables
 private fun takePhoto(
     context: android.content.Context,
@@ -340,6 +331,8 @@ private fun takePhoto(
     onSuccess: (Uri) -> Unit,
     onError: (String) -> Unit
 ) {
+    Log.d("CameraScreen", "Iniciando captura de foto")
+
     // Crear archivo para guardar la foto
     val photoFile = File(
         context.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
@@ -356,6 +349,7 @@ private fun takePhoto(
         object : ImageCapture.OnImageSavedCallback {
             override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                 val savedUri = Uri.fromFile(photoFile)
+                Log.d("CameraScreen", "Imagen guardada exitosamente en: $savedUri")
                 onSuccess(savedUri)
             }
 
@@ -365,4 +359,14 @@ private fun takePhoto(
             }
         }
     )
+}
+
+// Función para navegar a la pantalla de selección de tipo de documento
+private fun navigateToDocumentType(navController: NavController, uriString: String) {
+    try {
+        Log.d("CameraScreen", "Navegando a DocumentTypeScreen con URI: $uriString")
+        navController.navigate("${Screen.DocumentType.route}/$uriString")
+    } catch (e: Exception) {
+        Log.e("CameraScreen", "Error al navegar: ${e.message}", e)
+    }
 }

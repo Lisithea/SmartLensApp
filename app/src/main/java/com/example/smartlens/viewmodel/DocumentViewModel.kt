@@ -117,10 +117,20 @@ class DocumentViewModel @Inject constructor(
     fun loadDocumentById(id: String) {
         viewModelScope.launch {
             try {
+                Log.d(TAG, "Cargando documento con ID: $id")
+
+                // Informar que estamos cargando
+                _userMessage.value = context.getString(R.string.loading)
+
                 val document = repository.getDocumentById(id)
                 if (document != null) {
+                    Log.d(TAG, "Documento encontrado: ${document.getTypeDisplay()} - ${document.getIdentifier()}")
                     _currentDocument.value = document
+
+                    // Actualizar el estado para indicar que el documento está listo
+                    _processingState.value = DocumentProcessingState.DocumentReady(document)
                 } else {
+                    Log.e(TAG, "Documento no encontrado con ID: $id")
                     _processingState.value = DocumentProcessingState.Error(
                         context.getString(R.string.document_not_found_error)
                     )
@@ -246,47 +256,111 @@ class DocumentViewModel @Inject constructor(
 
     /**
      * Procesa el documento según el tipo seleccionado
+     * Implementa el flujo completo y maneja las transiciones de estado correctamente
      */
     fun processDocument(documentType: DocumentType) {
         viewModelScope.launch {
             try {
-                Log.d(TAG, "Procesando documento de tipo: $documentType")
+                Log.d(TAG, "Iniciando procesamiento de documento tipo: $documentType")
                 _processingState.value = DocumentProcessingState.ProcessingDocument(documentType)
 
                 // Obtener URI de la imagen procesada, o usar la temporal si no está disponible
                 val imageUri = _processedImageUri.value ?: tempImageUri
                 if (imageUri == null) {
-                    throw IllegalStateException("No hay imagen disponible para procesar")
+                    Log.e(TAG, "Error: No hay imagen disponible para procesar")
+                    _processingState.value = DocumentProcessingState.Error("No hay imagen disponible para procesar")
+                    _userMessage.value = "Error: No hay imagen disponible"
+                    return@launch
                 }
 
-                // Proceso completo con el servicio de procesamiento
-                val document = imageProcessingService.processDocumentImage(imageUri, documentType)
+                // Primero actualizamos el estado para mostrar que estamos extrayendo texto
+                // Esto es importante para la UI
+                _processingState.value = DocumentProcessingState.ExtractingText
 
-                // Guardar documento
-                repository.saveDocument(document)
+                // Extraer texto si aún no lo hemos hecho
+                if (_extractedText.value.isBlank()) {
+                    Log.d(TAG, "Extrayendo texto de la imagen")
+                    try {
+                        val extractedText = ocrService.extractTextFromUri(imageUri)
+                        _extractedText.value = extractedText
 
-                // Actualizar estado
+                        if (extractedText.isBlank()) {
+                            Log.e(TAG, "Error: No se pudo extraer texto de la imagen")
+                            _processingState.value = DocumentProcessingState.Error("No se pudo extraer texto de la imagen")
+                            _userMessage.value = context.getString(R.string.ocr_error)
+                            return@launch
+                        }
+
+                        Log.d(TAG, "Texto extraído correctamente (${extractedText.length} caracteres)")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error al extraer texto: ${e.message}", e)
+                        _processingState.value = DocumentProcessingState.Error("Error al extraer texto: ${e.message}")
+                        _userMessage.value = context.getString(R.string.ocr_error)
+                        return@launch
+                    }
+                }
+
+                // Actualizar estado para mostrar que estamos procesando el documento
+                _processingState.value = DocumentProcessingState.ProcessingDocument(documentType)
+
+                // Procesar el documento según el tipo
+                Log.d(TAG, "Procesando documento con el tipo seleccionado: $documentType")
+                val document = try {
+                    when (documentType) {
+                        DocumentType.INVOICE -> {
+                            geminiService.processInvoice(_extractedText.value, imageUri)
+                        }
+                        DocumentType.DELIVERY_NOTE -> {
+                            geminiService.processDeliveryNote(_extractedText.value, imageUri)
+                        }
+                        DocumentType.WAREHOUSE_LABEL -> {
+                            geminiService.processWarehouseLabel(_extractedText.value, imageUri)
+                        }
+                        else -> {
+                            // Si es desconocido, intentar procesar como factura por defecto
+                            Log.w(TAG, "Tipo de documento desconocido, procesando como factura")
+                            geminiService.processInvoice(_extractedText.value, imageUri)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error al procesar documento con Gemini: ${e.message}", e)
+
+                    // Determinar tipo de error para mensaje adecuado
+                    val errorMessage = when {
+                        e.message?.contains("API Key") == true -> context.getString(R.string.api_key_missing_error)
+                        e.message?.contains("conexión") == true -> context.getString(R.string.network_error)
+                        else -> context.getString(R.string.processing_error_generic)
+                    }
+
+                    _processingState.value = DocumentProcessingState.Error(e.message ?: errorMessage)
+                    _userMessage.value = errorMessage
+                    return@launch
+                }
+
+                // Guardar documento en la base de datos
+                try {
+                    Log.d(TAG, "Guardando documento en la base de datos: ${document.id}")
+                    repository.saveDocument(document)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error al guardar documento: ${e.message}", e)
+                    _processingState.value = DocumentProcessingState.Error("Error al guardar documento: ${e.message}")
+                    _userMessage.value = "Error al guardar documento"
+                    return@launch
+                }
+
+                // Actualizar estado para indicar que el documento está listo
+                Log.d(TAG, "Documento procesado correctamente: ${document.id}")
                 _currentDocument.value = document
                 _processingState.value = DocumentProcessingState.DocumentReady(document)
-
-                // Mensaje de éxito
                 _userMessage.value = context.getString(R.string.document_saved)
 
                 // Recargar documentos recientes
                 loadRecentDocuments()
 
             } catch (e: Exception) {
-                Log.e(TAG, "Error al procesar documento: ${e.message}", e)
-
-                // Determinar tipo de error para mensaje adecuado
-                val errorMessage = when {
-                    e.message?.contains("API Key") == true -> context.getString(R.string.api_key_missing_error)
-                    e.message?.contains("conexión") == true -> context.getString(R.string.network_error)
-                    else -> context.getString(R.string.processing_error_generic)
-                }
-
-                _processingState.value = DocumentProcessingState.Error(e.message ?: errorMessage)
-                _userMessage.value = errorMessage
+                Log.e(TAG, "Error general en processDocument: ${e.message}", e)
+                _processingState.value = DocumentProcessingState.Error(e.message ?: "Error desconocido")
+                _userMessage.value = context.getString(R.string.processing_error_generic)
             }
         }
     }

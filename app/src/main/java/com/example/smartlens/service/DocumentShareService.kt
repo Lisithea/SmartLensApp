@@ -12,6 +12,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.qrcode.QRCodeWriter
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import android.util.Log
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,6 +21,8 @@ class DocumentShareService @Inject constructor(
     @ApplicationContext private val context: Context,
     private val gson: Gson
 ) {
+    private val TAG = "DocumentShareService"
+
     /**
      * Convierte un documento a formato JSON
      */
@@ -33,6 +36,8 @@ class DocumentShareService @Inject constructor(
     fun saveDocumentToFile(document: LogisticsDocument): Uri {
         val jsonString = gson.toJson(document)
 
+        Log.d(TAG, "Guardando documento en archivo temporal: ${document.id}")
+
         val fileName = when (document) {
             is com.example.smartlens.model.Invoice -> "factura_${document.invoiceNumber}.json"
             is com.example.smartlens.model.DeliveryNote -> "albaran_${document.deliveryNoteNumber}.json"
@@ -42,6 +47,8 @@ class DocumentShareService @Inject constructor(
 
         val file = File(context.cacheDir, fileName)
         file.writeText(jsonString)
+
+        Log.d(TAG, "Documento guardado en: ${file.absolutePath}")
 
         return FileProvider.getUriForFile(
             context,
@@ -54,6 +61,8 @@ class DocumentShareService @Inject constructor(
      * Comparte el documento mediante intent
      */
     fun shareDocument(document: LogisticsDocument) {
+        Log.d(TAG, "Compartiendo documento: ${document.id}")
+
         val fileUri = saveDocumentToFile(document)
 
         val intent = Intent(Intent.ACTION_SEND).apply {
@@ -76,6 +85,8 @@ class DocumentShareService @Inject constructor(
         val documentId = document.id
         val accessUrl = "$baseUrl$documentId"
 
+        Log.d(TAG, "Generando código QR para documento: ${document.id}")
+
         val qrCodeWriter = QRCodeWriter()
         val bitMatrix = qrCodeWriter.encode(accessUrl, BarcodeFormat.QR_CODE, 512, 512)
 
@@ -89,6 +100,8 @@ class DocumentShareService @Inject constructor(
             }
         }
 
+        Log.d(TAG, "Código QR generado correctamente")
+
         return bitmap
     }
 
@@ -96,6 +109,8 @@ class DocumentShareService @Inject constructor(
      * Comparte el documento como Excel
      */
     fun shareAsExcel(excelUri: Uri) {
+        Log.d(TAG, "Compartiendo documento como Excel: $excelUri")
+
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             putExtra(Intent.EXTRA_SUBJECT, "Documento exportado desde SmartLens")
@@ -113,6 +128,8 @@ class DocumentShareService @Inject constructor(
      * Comparte enlace para abrir en PC
      */
     fun shareWebLink(document: LogisticsDocument) {
+        Log.d(TAG, "Compartiendo enlace web para documento: ${document.id}")
+
         val baseUrl = "https://smartlens.example.com/view/"
         val link = "$baseUrl${document.id}"
 

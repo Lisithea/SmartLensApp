@@ -37,7 +37,24 @@ fun DocumentDetailsScreen(
 
     // Cargar documento por ID
     LaunchedEffect(documentId) {
+        Log.d("DocumentDetailsScreen", "Cargando documento con ID: $documentId")
         viewModel.loadDocumentById(documentId)
+    }
+
+    // Observar cambios en el estado de procesamiento
+    LaunchedEffect(processingState) {
+        if (processingState is DocumentProcessingState.Error) {
+            val error = (processingState as DocumentProcessingState.Error).message
+            snackbarManager?.showError("Error: $error")
+        }
+    }
+
+    // Observar cambios en el documento actual
+    LaunchedEffect(currentDocument) {
+        if (currentDocument != null) {
+            Log.d("DocumentDetailsScreen", "Documento cargado correctamente: ${currentDocument!!.id}")
+            snackbarManager?.showSuccess("Documento cargado")
+        }
     }
 
     Scaffold(

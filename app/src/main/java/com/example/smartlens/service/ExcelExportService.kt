@@ -16,6 +16,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import android.util.Log
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,10 +24,14 @@ import javax.inject.Singleton
 class ExcelExportService @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    private val TAG = "ExcelExportService"
+
     /**
      * Exporta un documento a Excel y devuelve la URI del archivo
      */
     fun exportToExcel(document: LogisticsDocument): Uri {
+        Log.d(TAG, "Exportando documento a Excel: ${document.id}")
+
         val workbook = XSSFWorkbook()
 
         when (document) {
@@ -47,6 +52,8 @@ class ExcelExportService @Inject constructor(
         FileOutputStream(file).use { outputStream ->
             workbook.write(outputStream)
         }
+
+        Log.d(TAG, "Excel guardado en: ${file.absolutePath}")
 
         // Devolver la URI del archivo para compartir
         return FileProvider.getUriForFile(
@@ -80,21 +87,31 @@ class ExcelExportService @Inject constructor(
         createHeaderRow(sheet, rowNum++, headerStyle, "INFORMACIÓN DE FACTURA")
         createRow(sheet, rowNum++, "Número de Factura:", invoice.invoiceNumber)
         createRow(sheet, rowNum++, "Fecha:", invoice.date)
-        createRow(sheet, rowNum++, "Fecha Vencimiento:", invoice.dueDate ?: "")
+        invoice.dueDate?.let {
+            createRow(sheet, rowNum++, "Fecha Vencimiento:", it)
+        }
 
         // Sección de proveedor
         rowNum++
         createHeaderRow(sheet, rowNum++, headerStyle, "PROVEEDOR")
         createRow(sheet, rowNum++, "Nombre:", invoice.supplier.name)
-        createRow(sheet, rowNum++, "NIF:", invoice.supplier.taxId ?: "")
-        createRow(sheet, rowNum++, "Dirección:", invoice.supplier.address ?: "")
+        invoice.supplier.taxId?.let {
+            createRow(sheet, rowNum++, "NIF:", it)
+        }
+        invoice.supplier.address?.let {
+            createRow(sheet, rowNum++, "Dirección:", it)
+        }
 
         // Sección de cliente
         rowNum++
         createHeaderRow(sheet, rowNum++, headerStyle, "CLIENTE")
         createRow(sheet, rowNum++, "Nombre:", invoice.client.name)
-        createRow(sheet, rowNum++, "NIF:", invoice.client.taxId ?: "")
-        createRow(sheet, rowNum++, "Dirección:", invoice.client.address ?: "")
+        invoice.client.taxId?.let {
+            createRow(sheet, rowNum++, "NIF:", it)
+        }
+        invoice.client.address?.let {
+            createRow(sheet, rowNum++, "Dirección:", it)
+        }
 
         // Tabla de artículos
         rowNum += 2
@@ -161,20 +178,30 @@ class ExcelExportService @Inject constructor(
         createHeaderRow(sheet, rowNum++, headerStyle, "ORIGEN")
         createRow(sheet, rowNum++, "Nombre:", deliveryNote.origin.name)
         createRow(sheet, rowNum++, "Dirección:", deliveryNote.origin.address)
-        createRow(sheet, rowNum++, "Contacto:", deliveryNote.origin.contactPerson ?: "")
-        createRow(sheet, rowNum++, "Teléfono:", deliveryNote.origin.contactPhone ?: "")
+        deliveryNote.origin.contactPerson?.let {
+            createRow(sheet, rowNum++, "Contacto:", it)
+        }
+        deliveryNote.origin.contactPhone?.let {
+            createRow(sheet, rowNum++, "Teléfono:", it)
+        }
 
         // Sección de destino
         rowNum++
         createHeaderRow(sheet, rowNum++, headerStyle, "DESTINO")
         createRow(sheet, rowNum++, "Nombre:", deliveryNote.destination.name)
         createRow(sheet, rowNum++, "Dirección:", deliveryNote.destination.address)
-        createRow(sheet, rowNum++, "Contacto:", deliveryNote.destination.contactPerson ?: "")
-        createRow(sheet, rowNum++, "Teléfono:", deliveryNote.destination.contactPhone ?: "")
+        deliveryNote.destination.contactPerson?.let {
+            createRow(sheet, rowNum++, "Contacto:", it)
+        }
+        deliveryNote.destination.contactPhone?.let {
+            createRow(sheet, rowNum++, "Teléfono:", it)
+        }
 
         // Transportista
         rowNum++
-        createRow(sheet, rowNum++, "Transportista:", deliveryNote.carrier ?: "")
+        deliveryNote.carrier?.let {
+            createRow(sheet, rowNum++, "Transportista:", it)
+        }
 
         // Tabla de artículos
         rowNum += 2
@@ -200,13 +227,19 @@ class ExcelExportService @Inject constructor(
 
         // Totales
         rowNum += 2
-        createRow(sheet, rowNum++, "Total Bultos:", deliveryNote.totalPackages?.toString() ?: "")
-        createRow(sheet, rowNum++, "Peso Total:", deliveryNote.totalWeight?.toString() ?: "")
+        deliveryNote.totalPackages?.let {
+            createRow(sheet, rowNum++, "Total Bultos:", it.toString())
+        }
+        deliveryNote.totalWeight?.let {
+            createRow(sheet, rowNum++, "Peso Total:", it.toString())
+        }
 
         // Observaciones
         rowNum++
-        createHeaderRow(sheet, rowNum++, headerStyle, "OBSERVACIONES")
-        createRow(sheet, rowNum++, "", deliveryNote.observations ?: "")
+        deliveryNote.observations?.let {
+            createHeaderRow(sheet, rowNum++, headerStyle, "OBSERVACIONES")
+            createRow(sheet, rowNum++, "", it)
+        }
 
         // Autoajustar columnas
         for (i in 0..4) {
@@ -240,10 +273,18 @@ class ExcelExportService @Inject constructor(
         createRow(sheet, rowNum++, "Código de Producto:", label.productCode)
         createRow(sheet, rowNum++, "Nombre de Producto:", label.productName)
         createRow(sheet, rowNum++, "Cantidad:", label.quantity.toString())
-        createRow(sheet, rowNum++, "Número de Lote:", label.batchNumber ?: "")
-        createRow(sheet, rowNum++, "Fecha de Caducidad:", label.expirationDate ?: "")
-        createRow(sheet, rowNum++, "Ubicación:", label.location ?: "")
-        createRow(sheet, rowNum++, "Código de Barras:", label.barcode ?: "")
+        label.batchNumber?.let {
+            createRow(sheet, rowNum++, "Número de Lote:", it)
+        }
+        label.expirationDate?.let {
+            createRow(sheet, rowNum++, "Fecha de Caducidad:", it)
+        }
+        label.location?.let {
+            createRow(sheet, rowNum++, "Ubicación:", it)
+        }
+        label.barcode?.let {
+            createRow(sheet, rowNum++, "Código de Barras:", it)
+        }
 
         // Autoajustar columnas
         sheet.autoSizeColumn(0)

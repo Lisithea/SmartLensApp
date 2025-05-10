@@ -12,12 +12,14 @@ import kotlinx.coroutines.withContext
 import com.google.gson.Gson
 import javax.inject.Inject
 import javax.inject.Singleton
+import android.util.Log
 
 @Singleton
 class GeminiService @Inject constructor(
     @ApplicationContext private val context: Context,
     private val gson: Gson
 ) {
+    private val TAG = "GeminiService"
     private val preferences: SharedPreferences = context.getSharedPreferences("smartlens_settings", Context.MODE_PRIVATE)
 
     // Obtener API Key de las preferencias
@@ -38,6 +40,8 @@ class GeminiService @Inject constructor(
         if (apiKey.isBlank()) {
             throw IllegalStateException("API Key de Gemini no configurada. Por favor, configure la API Key en Ajustes.")
         }
+
+        Log.d(TAG, "Procesando factura con Gemini. Texto: ${text.take(100)}...")
 
         val prompt = """
             Analiza el siguiente texto OCR de una factura y extrae los datos estructurados.
@@ -84,29 +88,40 @@ class GeminiService @Inject constructor(
         )
 
         val inputContent = content { text(prompt) }
-        val response = generativeModel.generateContent(inputContent)
 
-        // Extraer el JSON de la respuesta
-        val jsonText = extractJsonFromResponse(response.text ?: "")
-        val invoiceData = gson.fromJson(jsonText, InvoiceData::class.java)
+        try {
+            Log.d(TAG, "Enviando prompt a Gemini API")
+            val response = generativeModel.generateContent(inputContent)
 
-        // Convertir a modelo Invoice
-        return@withContext Invoice(
-            imageUri = imageUri ?: Uri.EMPTY,
-            rawTextContent = text,
-            invoiceNumber = invoiceData.invoiceNumber,
-            date = invoiceData.date,
-            dueDate = invoiceData.dueDate,
-            supplier = invoiceData.supplier,
-            client = invoiceData.client,
-            items = invoiceData.items,
-            subtotal = invoiceData.subtotal,
-            taxAmount = invoiceData.taxAmount,
-            totalAmount = invoiceData.totalAmount,
-            paymentTerms = invoiceData.paymentTerms,
-            notes = invoiceData.notes,
-            barcode = invoiceData.barcode
-        )
+            Log.d(TAG, "Respuesta recibida de Gemini. Procesando JSON...")
+
+            // Extraer el JSON de la respuesta
+            val jsonText = extractJsonFromResponse(response.text ?: "")
+            val invoiceData = gson.fromJson(jsonText, InvoiceData::class.java)
+
+            Log.d(TAG, "JSON procesado correctamente: ${jsonText.take(100)}...")
+
+            // Convertir a modelo Invoice
+            return@withContext Invoice(
+                imageUri = imageUri ?: Uri.EMPTY,
+                rawTextContent = text,
+                invoiceNumber = invoiceData.invoiceNumber,
+                date = invoiceData.date,
+                dueDate = invoiceData.dueDate,
+                supplier = invoiceData.supplier,
+                client = invoiceData.client,
+                items = invoiceData.items,
+                subtotal = invoiceData.subtotal,
+                taxAmount = invoiceData.taxAmount,
+                totalAmount = invoiceData.totalAmount,
+                paymentTerms = invoiceData.paymentTerms,
+                notes = invoiceData.notes,
+                barcode = invoiceData.barcode
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error en procesamiento de factura con Gemini: ${e.message}", e)
+            throw IllegalStateException("Error al procesar factura: ${e.message}")
+        }
     }
 
     /**
@@ -117,6 +132,8 @@ class GeminiService @Inject constructor(
         if (apiKey.isBlank()) {
             throw IllegalStateException("API Key de Gemini no configurada. Por favor, configure la API Key en Ajustes.")
         }
+
+        Log.d(TAG, "Procesando albarán con Gemini. Texto: ${text.take(100)}...")
 
         val prompt = """
             Analiza el siguiente texto OCR de un albarán o nota de entrega y extrae los datos estructurados.
@@ -157,26 +174,37 @@ class GeminiService @Inject constructor(
         )
 
         val inputContent = content { text(prompt) }
-        val response = generativeModel.generateContent(inputContent)
 
-        // Extraer el JSON de la respuesta
-        val jsonText = extractJsonFromResponse(response.text ?: "")
-        val deliveryData = gson.fromJson(jsonText, DeliveryNoteData::class.java)
+        try {
+            Log.d(TAG, "Enviando prompt a Gemini API")
+            val response = generativeModel.generateContent(inputContent)
 
-        // Convertir a modelo DeliveryNote
-        return@withContext DeliveryNote(
-            imageUri = imageUri ?: Uri.EMPTY,
-            rawTextContent = text,
-            deliveryNoteNumber = deliveryData.deliveryNoteNumber,
-            date = deliveryData.date,
-            origin = deliveryData.origin,
-            destination = deliveryData.destination,
-            carrier = deliveryData.carrier,
-            items = deliveryData.items,
-            totalPackages = deliveryData.totalPackages,
-            totalWeight = deliveryData.totalWeight,
-            observations = deliveryData.observations
-        )
+            Log.d(TAG, "Respuesta recibida de Gemini. Procesando JSON...")
+
+            // Extraer el JSON de la respuesta
+            val jsonText = extractJsonFromResponse(response.text ?: "")
+            val deliveryData = gson.fromJson(jsonText, DeliveryNoteData::class.java)
+
+            Log.d(TAG, "JSON procesado correctamente: ${jsonText.take(100)}...")
+
+            // Convertir a modelo DeliveryNote
+            return@withContext DeliveryNote(
+                imageUri = imageUri ?: Uri.EMPTY,
+                rawTextContent = text,
+                deliveryNoteNumber = deliveryData.deliveryNoteNumber,
+                date = deliveryData.date,
+                origin = deliveryData.origin,
+                destination = deliveryData.destination,
+                carrier = deliveryData.carrier,
+                items = deliveryData.items,
+                totalPackages = deliveryData.totalPackages,
+                totalWeight = deliveryData.totalWeight,
+                observations = deliveryData.observations
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error en procesamiento de albarán con Gemini: ${e.message}", e)
+            throw IllegalStateException("Error al procesar albarán: ${e.message}")
+        }
     }
 
     /**
@@ -187,6 +215,8 @@ class GeminiService @Inject constructor(
         if (apiKey.isBlank()) {
             throw IllegalStateException("API Key de Gemini no configurada. Por favor, configure la API Key en Ajustes.")
         }
+
+        Log.d(TAG, "Procesando etiqueta con Gemini. Texto: ${text.take(100)}...")
 
         val prompt = """
             Analiza el siguiente texto OCR de una etiqueta de almacén o producto y extrae los datos estructurados.
@@ -225,25 +255,36 @@ class GeminiService @Inject constructor(
         )
 
         val inputContent = content { text(prompt) }
-        val response = generativeModel.generateContent(inputContent)
 
-        // Extraer el JSON de la respuesta
-        val jsonText = extractJsonFromResponse(response.text ?: "")
-        val labelData = gson.fromJson(jsonText, WarehouseLabelData::class.java)
+        try {
+            Log.d(TAG, "Enviando prompt a Gemini API")
+            val response = generativeModel.generateContent(inputContent)
 
-        // Convertir a modelo WarehouseLabel
-        return@withContext WarehouseLabel(
-            imageUri = imageUri ?: Uri.EMPTY,
-            rawTextContent = text,
-            labelId = labelData.labelId,
-            productCode = labelData.productCode,
-            productName = labelData.productName,
-            quantity = labelData.quantity,
-            batchNumber = labelData.batchNumber,
-            expirationDate = labelData.expirationDate,
-            location = labelData.location,
-            barcode = labelData.barcode
-        )
+            Log.d(TAG, "Respuesta recibida de Gemini. Procesando JSON...")
+
+            // Extraer el JSON de la respuesta
+            val jsonText = extractJsonFromResponse(response.text ?: "")
+            val labelData = gson.fromJson(jsonText, WarehouseLabelData::class.java)
+
+            Log.d(TAG, "JSON procesado correctamente: ${jsonText.take(100)}...")
+
+            // Convertir a modelo WarehouseLabel
+            return@withContext WarehouseLabel(
+                imageUri = imageUri ?: Uri.EMPTY,
+                rawTextContent = text,
+                labelId = labelData.labelId,
+                productCode = labelData.productCode,
+                productName = labelData.productName,
+                quantity = labelData.quantity,
+                batchNumber = labelData.batchNumber,
+                expirationDate = labelData.expirationDate,
+                location = labelData.location,
+                barcode = labelData.barcode
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error en procesamiento de etiqueta con Gemini: ${e.message}", e)
+            throw IllegalStateException("Error al procesar etiqueta: ${e.message}")
+        }
     }
 
     /**
