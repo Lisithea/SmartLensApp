@@ -157,6 +157,31 @@ fun ExportScreen(
                             }
                         }
                     )
+                    //exportar a excel
+                    ExportOption(
+                        icon = Icons.Default.Description,
+                        title = "Exportar a Excel",
+                        description = "Genera un archivo Excel con los datos estructurados del documento",
+                        onClick = {
+                            currentDocument?.let {
+                                viewModel.shareAsExcel(it)
+                            }
+                        }
+                    )
+
+                    //compartir documento
+                    ExportOption(
+                        icon = Icons.Default.Share,
+                        title = "Compartir documento",
+                        description = "Comparte el documento en formato JSON para abrir en PC",
+                        onClick = {
+                            currentDocument?.let {
+                                viewModel.shareDocument(it)
+                            }
+                        }
+                    )
+
+
 
                     // Mostrar código QR si se ha generado
                     qrCodeBitmap?.let { bitmap ->

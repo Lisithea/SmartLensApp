@@ -30,7 +30,7 @@ fun DiagnosticScreen(
     ocrTester: OcrTester,
     viewModel: DocumentViewModel = hiltViewModel()
 ) {
-    // Variable context no se utiliza, la eliminamos
+    val context = LocalContext.current
     val snackbarManager = LocalSnackbarManager.current
     val coroutineScope = rememberCoroutineScope()
 
