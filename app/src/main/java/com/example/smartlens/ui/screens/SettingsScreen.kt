@@ -53,34 +53,15 @@ fun SettingsScreen(
     val coroutineScope = rememberCoroutineScope()
 
     // Usamos un estado local que se actualiza con LaunchedEffect para evitar problemas
-    var isDarkTheme by remember { mutableStateOf(false) }
+    val isDarkTheme by ThemeManager.isDarkMode.collectAsState()
     var userName by remember { mutableStateOf(userProfileManager.getUserName()) }
     var userEmail by remember { mutableStateOf(userProfileManager.getEmail()) }
-    var quotesEnabled by remember { mutableStateOf(motivationalQuotesService.getQuotesEnabled()) }
-    var selectedTheme by remember { mutableStateOf(ThemeManager.currentTheme.value) }
-
-    // Actualizar el estado al iniciar el componente
-    LaunchedEffect(Unit) {
-        isDarkTheme = viewModel.isDarkTheme
-    }
-
-    // Observador para cambios en el tema
-    DisposableEffect(Unit) {
-        val observer = { newValue: Boolean ->
-            isDarkTheme = newValue
-        }
-
-        // Registramos un observador para el tema
-        ThemeManager.addObserver(observer)
-
-        onDispose {
-            // Limpiamos el observador
-            ThemeManager.removeObserver(observer)
-        }
-    }
+    val quotesEnabled by motivationalQuotesService.quotesEnabled.collectAsState()
+    val selectedTheme by ThemeManager.currentTheme.collectAsState()
 
     // Estados para la UI
-    var apiKeyInput by remember { mutableStateOf(viewModel.apiKey) }
+    val apiKey by viewModel.apiKey.collectAsState()
+    var apiKeyInput by remember { mutableStateOf(apiKey) }
     var showApiKey by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -232,7 +213,6 @@ fun SettingsScreen(
                 Switch(
                     checked = quotesEnabled,
                     onCheckedChange = {
-                        quotesEnabled = it
                         motivationalQuotesService.toggleQuotes(it)
                         snackbarManager?.showInfo("Frases motivadoras " + (if (it) "activadas" else "desactivadas"))
                     }
@@ -310,8 +290,8 @@ fun SettingsScreen(
                             ThemeManager.ThemeType.DARK -> Icons.Default.DarkMode
                             ThemeManager.ThemeType.SYSTEM -> Icons.Default.SettingsBrightness
                             ThemeManager.ThemeType.OLED_BLACK -> Icons.Default.Brightness2
-                            ThemeManager.ThemeType.RETRO -> Icons.Default.Vintage
-                            ThemeManager.ThemeType.NATURE -> Icons.Default.Forest
+                            ThemeManager.ThemeType.RETRO -> Icons.Default.History
+                            ThemeManager.ThemeType.NATURE -> Icons.Default.Landscape
                             ThemeManager.ThemeType.ELEGANT -> Icons.Default.AutoAwesome
                         },
                         contentDescription = null,
@@ -574,7 +554,6 @@ fun SettingsScreen(
                                 .fillMaxWidth()
                                 .clickable {
                                     ThemeManager.setThemeType(theme, context)
-                                    selectedTheme = theme
                                     snackbarManager?.showSuccess(context.getString(R.string.theme_changed))
                                     showThemeDialog = false
                                 }
@@ -588,8 +567,8 @@ fun SettingsScreen(
                                     ThemeManager.ThemeType.DARK -> Icons.Default.DarkMode
                                     ThemeManager.ThemeType.SYSTEM -> Icons.Default.SettingsBrightness
                                     ThemeManager.ThemeType.OLED_BLACK -> Icons.Default.Brightness2
-                                    ThemeManager.ThemeType.RETRO -> Icons.Default.Vintage
-                                    ThemeManager.ThemeType.NATURE -> Icons.Default.Forest
+                                    ThemeManager.ThemeType.RETRO -> Icons.Default.History
+                                    ThemeManager.ThemeType.NATURE -> Icons.Default.Landscape
                                     ThemeManager.ThemeType.ELEGANT -> Icons.Default.AutoAwesome
                                 },
                                 contentDescription = null,

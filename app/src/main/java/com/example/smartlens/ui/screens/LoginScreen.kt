@@ -7,10 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,8 +27,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.example.smartlens.R
+import com.example.smartlens.ui.components.LocalSnackbarManager
 import com.example.smartlens.ui.navigation.Screen
 import com.example.smartlens.viewmodel.LoginViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,8 +38,10 @@ fun LoginScreen(
     navController: NavController,
     viewModel: LoginViewModel = hiltViewModel()
 ) {
-    // Variable context no se utiliza, la eliminamos
+    val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val snackbarManager = LocalSnackbarManager.current
+    val coroutineScope = rememberCoroutineScope()
 
     // Estado de autenticación
     val isAuthenticated by viewModel.isAuthenticated.collectAsState()
@@ -51,6 +52,9 @@ fun LoginScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+
+    // Estado para mostrar botón de demo
+    var showDemoButton by remember { mutableStateOf(true) }
 
     // Navegar a la pantalla principal si está autenticado
     LaunchedEffect(isAuthenticated) {
@@ -155,7 +159,9 @@ fun LoginScreen(
                     onDone = {
                         focusManager.clearFocus()
                         if (email.isNotBlank() && password.isNotBlank()) {
-                            viewModel.login(email, password)
+                            coroutineScope.launch {
+                                viewModel.login(email, password)
+                            }
                         }
                     }
                 ),
@@ -165,7 +171,11 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             // Mensaje de error
-            if (errorMessage.isNotEmpty()) {
+            AnimatedVisibility(
+                visible = errorMessage.isNotEmpty(),
+                enter = androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut()
+            ) {
                 Text(
                     text = errorMessage,
                     color = MaterialTheme.colorScheme.error,
@@ -178,7 +188,11 @@ fun LoginScreen(
 
             // Botón de inicio de sesión
             Button(
-                onClick = { viewModel.login(email, password) },
+                onClick = {
+                    coroutineScope.launch {
+                        viewModel.login(email, password)
+                    }
+                },
                 enabled = email.isNotBlank() && password.isNotBlank() && !isLoading,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -196,11 +210,32 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Botón de demo
+            if (showDemoButton) {
+                OutlinedButton(
+                    onClick = {
+                        viewModel.loginDemo()
+                        showDemoButton = false
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Modo Demostración")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // Enlace de soporte
             TextButton(
                 onClick = {
-                    // Aquí puedes implementar una función para contactar con soporte
-                    // o navegar a una pantalla de información de contacto
+                    // Aquí se implementaría la función para contactar con soporte
+                    snackbarManager?.showInfo("Función de contacto no implementada")
                 }
             ) {
                 Text("¿Necesitas ayuda? Contáctanos")

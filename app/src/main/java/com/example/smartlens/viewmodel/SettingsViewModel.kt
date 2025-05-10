@@ -27,11 +27,11 @@ class SettingsViewModel @Inject constructor(
     val apiKey: StateFlow<String> = _apiKey
 
     // Estado para el idioma seleccionado
-    private val _selectedLanguage = MutableStateFlow("")
+    private val _selectedLanguage = MutableStateFlow(LanguageHelper.currentLanguage.value)
     val selectedLanguage: StateFlow<String> = _selectedLanguage
 
     // Estado para el tema oscuro
-    private val _isDarkTheme = MutableStateFlow(false)
+    private val _isDarkTheme = MutableStateFlow(ThemeManager.isDarkMode.value)
     val isDarkTheme: StateFlow<Boolean> = _isDarkTheme
 
     // Bandera para saber si se cambió el idioma
@@ -44,16 +44,19 @@ class SettingsViewModel @Inject constructor(
         ThemeManager.init(context)
 
         // Cargar valores iniciales
-        _apiKey.value = preferences.getString("api_key", "") ?: ""
-        _selectedLanguage.value = preferences.getString("selected_language", "español") ?: "español"
-        _isDarkTheme.value = ThemeManager.isDarkMode.value
+        _apiKey.value = geminiService.getApiKey()
+        _selectedLanguage.value = LanguageHelper.getCurrentLanguage(context)
+
+        // Registrar observador para el tema
+        ThemeManager.addObserver { isDark ->
+            _isDarkTheme.value = isDark
+        }
 
         Log.d("SettingsViewModel", "API Key: ${_apiKey.value}, Language: ${_selectedLanguage.value}, Dark Theme: ${_isDarkTheme.value}")
     }
 
     fun saveApiKey(key: String) {
         viewModelScope.launch {
-            preferences.edit().putString("api_key", key).apply()
             geminiService.saveApiKey(key)
             _apiKey.value = key
             Log.d("SettingsViewModel", "Saved API Key: $key")
@@ -63,7 +66,6 @@ class SettingsViewModel @Inject constructor(
     fun saveLanguage(language: String) {
         viewModelScope.launch {
             if (_selectedLanguage.value != language) {
-                preferences.edit().putString("selected_language", language).apply()
                 _selectedLanguage.value = language
 
                 // Marcar que se cambió el idioma
@@ -108,4 +110,10 @@ class SettingsViewModel @Inject constructor(
         "español", "inglés", "francés", "alemán", "italiano", "portugués",
         "chino", "japonés", "coreano", "ruso", "árabe"
     )
+
+    override fun onCleared() {
+        super.onCleared()
+        // Eliminar el observador cuando se destruya el ViewModel
+        ThemeManager.removeObserver { _isDarkTheme.value = it }
+    }
 }

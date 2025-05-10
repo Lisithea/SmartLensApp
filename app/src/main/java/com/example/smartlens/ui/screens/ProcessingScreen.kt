@@ -347,7 +347,7 @@ fun ProcessingScreen(
                                                     Text(
                                                         text = key,
                                                         style = MaterialTheme.typography.bodyMedium,
-                                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                                        fontWeight = FontWeight.Bold,
                                                         modifier = Modifier.weight(1f)
                                                     )
 
@@ -366,7 +366,9 @@ fun ProcessingScreen(
                                                 Text(
                                                     text = "Y ${structuredData.size - 5} campos más...",
                                                     style = MaterialTheme.typography.bodySmall,
-                                                    modifier = Modifier.align(Alignment.End).padding(top = 8.dp)
+                                                    modifier = Modifier
+                                                        .align(Alignment.End)
+                                                        .padding(top = 8.dp)
                                                 )
                                             }
                                         }

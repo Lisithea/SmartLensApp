@@ -111,9 +111,9 @@ class UserRepository @Inject constructor(
 
         // Verificamos las credenciales
         val userInfo = VALID_USERS[email]
-        val isValid = userInfo?.first == password
+        val isValid = userInfo != null && userInfo.first == password
 
-        if (isValid) {
+        if (isValid && userInfo != null) {
             // Guardamos los datos del usuario autenticado
             saveUserCredentials(email, password, userInfo.second)
             return true

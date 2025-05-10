@@ -5,14 +5,13 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.viewModels
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.rememberNavController
 import com.example.smartlens.ui.components.LocalSnackbarManager
 import com.example.smartlens.ui.components.SnackbarManager
@@ -21,10 +20,7 @@ import com.example.smartlens.ui.theme.SmartLensTheme
 import com.example.smartlens.util.LanguageHelper
 import com.example.smartlens.util.SampleDataLoader
 import com.example.smartlens.util.ThemeManager
-import com.example.smartlens.viewmodel.SettingsViewModel
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import com.example.smartlens.service.UserProfileManager

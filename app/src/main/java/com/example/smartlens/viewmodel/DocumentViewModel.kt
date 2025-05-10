@@ -110,15 +110,17 @@ class DocumentViewModel @Inject constructor(
      * Guarda una imagen temporal en el directorio de la aplicación
      */
     suspend fun saveTemporaryImage(imageUri: Uri): Uri {
-        try {
-            Log.d(TAG, "Guardando imagen temporal: $imageUri")
-            val savedUri = repository.saveTempImage(imageUri)
-            tempImageUri = savedUri
-            Log.d(TAG, "Imagen temporal guardada en: $savedUri")
-            return savedUri
-        } catch (e: Exception) {
-            Log.e(TAG, "Error al guardar imagen temporal: ${e.message}", e)
-            throw e
+        return withContext(Dispatchers.IO) {
+            try {
+                Log.d(TAG, "Guardando imagen temporal: $imageUri")
+                val savedUri = repository.saveTempImage(imageUri)
+                tempImageUri = savedUri
+                Log.d(TAG, "Imagen temporal guardada en: $savedUri")
+                savedUri
+            } catch (e: Exception) {
+                Log.e(TAG, "Error al guardar imagen temporal: ${e.message}", e)
+                throw e
+            }
         }
     }
 
@@ -126,7 +128,7 @@ class DocumentViewModel @Inject constructor(
      * Procesa una imagen para extraer texto
      */
     suspend fun processImage(imageUri: Uri) {
-        viewModelScope.launch {
+        withContext(Dispatchers.IO) {
             try {
                 Log.d(TAG, "Iniciando procesamiento de imagen: $imageUri")
 
@@ -248,8 +250,10 @@ class DocumentViewModel @Inject constructor(
      * Exporta documento a Excel
      */
     suspend fun exportToExcel(document: LogisticsDocument): Uri {
-        Log.d(TAG, "Exportando documento a Excel: ${document.id}")
-        return processingManager.generateExcelFile(document)
+        return withContext(Dispatchers.IO) {
+            Log.d(TAG, "Exportando documento a Excel: ${document.id}")
+            processingManager.generateExcelFile(document)
+        }
     }
 
     /**
@@ -306,11 +310,13 @@ class DocumentViewModel @Inject constructor(
      * Procesa una imagen y devuelve el texto extraído (para diagnóstico)
      */
     suspend fun processImageAndGetText(imageUri: Uri): String {
-        return try {
-            processingManager.processImage(imageUri)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error en processImageAndGetText: ${e.message}", e)
-            throw e
+        return withContext(Dispatchers.IO) {
+            try {
+                processingManager.processImage(imageUri)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error en processImageAndGetText: ${e.message}", e)
+                throw e
+            }
         }
     }
 

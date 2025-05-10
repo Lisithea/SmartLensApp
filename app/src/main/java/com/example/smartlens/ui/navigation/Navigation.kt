@@ -20,9 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -46,7 +44,6 @@ import com.example.smartlens.util.OcrTester
 import com.example.smartlens.viewmodel.DocumentViewModel
 import com.example.smartlens.viewmodel.LoginViewModel
 import com.example.smartlens.viewmodel.SettingsViewModel
-import kotlinx.coroutines.delay
 
 /**
  * Componente principal de navegación que incluye la BottomBar
@@ -66,7 +63,7 @@ fun MainNavigation(
     val isAuthenticated by loginViewModel.isAuthenticated.collectAsState()
 
     // Estado para la API Key
-    val apiKey = settingsViewModel.apiKey
+    val apiKey by settingsViewModel.apiKey.collectAsState()
 
     // Estado para el saludo y frases motivacionales
     val greeting = userProfileManager.getGreeting()
@@ -76,7 +73,7 @@ fun MainNavigation(
     // Determinar la pantalla inicial basada en autenticación y API Key
     val startDestination = when {
         !isAuthenticated -> Screen.Login.route
-        apiKey.isBlank() -> Screen.ApiKeySetup.route
+        apiKey.isEmpty() -> Screen.ApiKeySetup.route
         else -> Screen.Home.route
     }
 
@@ -113,7 +110,7 @@ fun MainNavigation(
     )
 
     // Determinar si se debe mostrar la barra de navegación
-    val showBottomBar = isAuthenticated && apiKey.isNotBlank() &&
+    val showBottomBar = isAuthenticated && !apiKey.isEmpty() &&
             (currentRoute == Screen.Home.route ||
                     currentRoute == Screen.Camera.route ||
                     currentRoute == Screen.Settings.route)

@@ -1,5 +1,7 @@
 package com.example.smartlens.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -19,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.example.smartlens.R
+import com.example.smartlens.ui.components.LocalSnackbarManager
 import com.example.smartlens.ui.navigation.Screen
 import com.example.smartlens.viewmodel.SettingsViewModel
 import kotlinx.coroutines.launch
@@ -30,11 +33,14 @@ fun ApiKeySetupScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val snackbarManager = LocalSnackbarManager.current
+    val coroutineScope = rememberCoroutineScope()
 
     // Estado local para el input de la API Key
-    // Obtenemos el valor de apiKey como String
+    // Obtenemos el valor de apiKey como StateFlow
     val apiKey by viewModel.apiKey.collectAsState()
+
+    // Estado inicial en el composable
     var apiKeyInput by remember { mutableStateOf(apiKey) }
     var showApiKey by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
@@ -131,9 +137,40 @@ fun ApiKeySetupScreen(
 
             // Link para obtener una API Key
             TextButton(
-                onClick = { /* Abrir navegador para obtener API Key */ }
+                onClick = {
+                    // Abrir navegador para obtener API Key
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://ai.google.dev/"))
+                    context.startActivity(intent)
+                }
             ) {
                 Text(stringResource(R.string.get_api_key))
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Información adicional sobre la API
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = "¿Cómo obtener una API Key de Gemini?",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "1. Visita ai.google.dev\n" +
+                                "2. Crea una cuenta o inicia sesión\n" +
+                                "3. Ve a la sección 'API Keys'\n" +
+                                "4. Crea una nueva API Key\n" +
+                                "5. Copia y pega la clave aquí",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -143,9 +180,9 @@ fun ApiKeySetupScreen(
                 onClick = {
                     if (apiKeyInput.isNotEmpty()) {
                         isLoading = true
-                        scope.launch {
+                        coroutineScope.launch {
                             viewModel.saveApiKey(apiKeyInput)
-                            // Mostrar un Toast aquí en lugar de directamente desde el onClick
+                            // Mostrar un Toast
                             Toast.makeText(context, "API Key guardada correctamente", Toast.LENGTH_SHORT).show()
                             navController.navigate(Screen.Home.route) {
                                 popUpTo(0)
@@ -174,6 +211,31 @@ fun ApiKeySetupScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(stringResource(R.string.continue_text))
                 }
+            }
+
+            // Opción para continuar en modo prueba sin API Key
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedButton(
+                onClick = {
+                    // Usar una clave de API ficticia para pruebas
+                    coroutineScope.launch {
+                        viewModel.saveApiKey("TEST_MODE_API_KEY")
+                        snackbarManager?.showInfo("Modo prueba activado - Funcionalidad limitada")
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(0)
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Default.BugReport,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Continuar en modo prueba")
             }
         }
     }
