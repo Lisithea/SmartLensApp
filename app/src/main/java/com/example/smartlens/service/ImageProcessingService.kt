@@ -23,7 +23,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Servicio para el procesamiento inteligente de imágenes con OpenCV y OCR
+ * Servicio para el procesamiento inteligente de imágenes
  * Implementa el flujo completo desde la captura hasta el procesamiento avanzado
  */
 @Singleton
@@ -34,26 +34,51 @@ class ImageProcessingService @Inject constructor(
     private val excelExportService: ExcelExportService
 ) {
     private val TAG = "ImageProcessingService"
+    private var openCVInitialized = false
 
     init {
-        // Inicializar OpenCV
-        if (!OpenCVLoader.initDebug()) {
-            Log.e(TAG, "No se pudo inicializar OpenCV")
-        } else {
-            Log.d(TAG, "OpenCV inicializado correctamente")
+        // Intentar inicializar OpenCV de forma segura
+        try {
+            // Verificar si OpenCV ya está inicializado (por SmartLensApplication)
+            if (isOpenCVInitialized()) {
+                openCVInitialized = true
+                Log.d(TAG, "OpenCV ya estaba inicializado")
+            } else {
+                // Intentar inicializar OpenCV
+                openCVInitialized = OpenCVLoader.initDebug()
+                if (openCVInitialized) {
+                    Log.d(TAG, "OpenCV inicializado correctamente")
+                } else {
+                    Log.e(TAG, "No se pudo inicializar OpenCV")
+                    // No lanzar excepción, permitir el uso degradado de la app
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error al inicializar OpenCV: ${e.message}", e)
+            openCVInitialized = false
+        }
+    }
+
+    /**
+     * Verifica si OpenCV ya está inicializado
+     */
+    private fun isOpenCVInitialized(): Boolean {
+        return try {
+            // Intentar hacer una operación básica con OpenCV
+            val mat = Mat(1, 1, CvType.CV_8UC1)
+            mat.release()
+            true
+        } catch (e: Exception) {
+            false
         }
     }
 
     /**
      * Procesa una imagen desde su URI siguiendo el flujo completo:
-     * 1. Procesamiento de imagen con CV (corrección, recorte, mejora)
+     * 1. Procesamiento de imagen (corrección, recorte, mejora) si OpenCV está disponible
      * 2. OCR sobre la imagen procesada
      * 3. Análisis con IA del texto extraído
      * 4. Generación de documento estructurado
-     *
-     * @param imageUri URI de la imagen a procesar
-     * @param documentType Tipo de documento si ya se conoce, o null para detectarlo automáticamente
-     * @return El documento procesado con toda la información extraída
      */
     suspend fun processDocumentImage(
         imageUri: Uri,
@@ -62,9 +87,20 @@ class ImageProcessingService @Inject constructor(
         try {
             Log.d(TAG, "Iniciando procesamiento completo de imagen: $imageUri")
 
-            // FASE 1: Procesamiento de imagen
-            val processedImageUri = enhanceImageWithComputerVision(imageUri)
-            Log.d(TAG, "Imagen procesada con CV: $processedImageUri")
+            // FASE 1: Procesamiento de imagen - Solo si OpenCV está inicializado
+            val processedImageUri = if (openCVInitialized) {
+                try {
+                    enhanceImageWithComputerVision(imageUri)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error en procesamiento con OpenCV, usando imagen original: ${e.message}", e)
+                    imageUri
+                }
+            } else {
+                Log.d(TAG, "OpenCV no disponible, usando imagen original")
+                imageUri
+            }
+
+            Log.d(TAG, "Imagen a procesar: $processedImageUri")
 
             // FASE 2.1: OCR sobre la imagen procesada
             val extractedText = ocrService.extractTextFromUri(processedImageUri)
@@ -77,15 +113,13 @@ class ImageProcessingService @Inject constructor(
             val detectedType = documentType ?: ocrService.detectDocumentType(extractedText)
             Log.d(TAG, "Tipo de documento detectado: $detectedType")
 
-            // FASE 2.3: Procesamiento con IA para extraer datos estructurados
+            // FASE 3: Procesamiento con IA para extraer datos estructurados
             val document = when (detectedType) {
                 DocumentType.INVOICE -> geminiService.processInvoice(extractedText, processedImageUri)
                 DocumentType.DELIVERY_NOTE -> geminiService.processDeliveryNote(extractedText, processedImageUri)
                 DocumentType.WAREHOUSE_LABEL -> geminiService.processWarehouseLabel(extractedText, processedImageUri)
-                else -> geminiService.processInvoice(extractedText, processedImageUri) // Por defecto intentamos como factura
+                else -> geminiService.processInvoice(extractedText, processedImageUri) // Intentar como factura por defecto
             }
-
-            // FASE 2.4: Generar Excel (se hace bajo demanda en ExportScreen)
 
             return@withContext document
         } catch (e: Exception) {
@@ -97,23 +131,31 @@ class ImageProcessingService @Inject constructor(
     /**
      * Mejora la imagen usando técnicas de Computer Vision con OpenCV
      * 1. Detecta bordes y contornos
-     * 2. Corrige perspectiva
-     * 3. Recorta al área del documento
-     * 4. Mejora contraste y legibilidad
-     * 5. Guarda la imagen procesada
-     *
-     * @param imageUri URI de la imagen original
-     * @return URI de la imagen procesada
+     * 2. Intenta corregir perspectiva si se detectan cuatro bordes claros
+     * 3. Mejora contraste y legibilidad
      */
     suspend fun enhanceImageWithComputerVision(imageUri: Uri): Uri = withContext(Dispatchers.IO) {
+        if (!openCVInitialized) {
+            Log.w(TAG, "OpenCV no inicializado, devolviendo imagen original")
+            return@withContext imageUri
+        }
+
         try {
             // Abrir la imagen desde la URI
             val inputStream = context.contentResolver.openInputStream(imageUri)
                 ?: throw IllegalArgumentException("No se pudo abrir la imagen")
 
             // Decodificar el bitmap
-            val originalBitmap = BitmapFactory.decodeStream(inputStream)
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = 1 // No reducir resolución
+            }
+            val originalBitmap = BitmapFactory.decodeStream(inputStream, null, options)
             inputStream.close()
+
+            if (originalBitmap == null) {
+                Log.e(TAG, "No se pudo decodificar la imagen")
+                return@withContext imageUri
+            }
 
             // Convertir a formato OpenCV (Mat)
             val srcMat = Mat()
@@ -123,10 +165,10 @@ class ImageProcessingService @Inject constructor(
             val grayMat = Mat()
             Imgproc.cvtColor(srcMat, grayMat, Imgproc.COLOR_BGR2GRAY)
 
-            // 2. Aplicar desenfoque gaussiano para reducir ruido
+            // 2. Aplicar desenfoque para reducir ruido
             Imgproc.GaussianBlur(grayMat, grayMat, Size(5.0, 5.0), 0.0)
 
-            // 3. Detección de bordes con Canny
+            // 3. Detección de bordes
             val edgesMat = Mat()
             Imgproc.Canny(grayMat, edgesMat, 75.0, 200.0)
 
@@ -135,110 +177,186 @@ class ImageProcessingService @Inject constructor(
             val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
             Imgproc.dilate(edgesMat, dilatedEdges, kernel)
 
-            // 5. Encontrar contornos
+            // 5. Encontrar contornos - Usar clone() para evitar modificar la original
             val contours = ArrayList<MatOfPoint>()
             val hierarchy = Mat()
+            val tempMat = dilatedEdges.clone()
             Imgproc.findContours(
-                dilatedEdges,
+                tempMat,
                 contours,
                 hierarchy,
                 Imgproc.RETR_EXTERNAL,
                 Imgproc.CHAIN_APPROX_SIMPLE
             )
+            tempMat.release() // Liberar la matriz temporal
 
-            // 6. Encontrar el contorno más grande (presumiblemente el documento)
-            var maxArea = 0.0
-            var maxContourIndex = -1
+            // Procesar el resultado según si se encontraron contornos adecuados
+            val resultBitmap = processContours(srcMat, contours, originalBitmap.width, originalBitmap.height)
 
-            for (i in contours.indices) {
-                val area = Imgproc.contourArea(contours[i])
-                if (area > maxArea) {
-                    maxArea = area
-                    maxContourIndex = i
-                }
+            // Liberar recursos de OpenCV
+            srcMat.release()
+            grayMat.release()
+            edgesMat.release()
+            dilatedEdges.release()
+            hierarchy.release()
+            contours.forEach { it.release() }
+
+            // Guardar la imagen procesada
+            return@withContext saveProcessedImage(resultBitmap, "processed")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error en enhanceImageWithComputerVision: ${e.message}", e)
+            return@withContext imageUri
+        }
+    }
+
+    /**
+     * Procesa los contornos encontrados para mejorar la imagen
+     */
+    private fun processContours(srcMat: Mat, contours: List<MatOfPoint>, originalWidth: Int, originalHeight: Int): Bitmap {
+        // Si no hay contornos, aplicar solo mejoras básicas
+        if (contours.isEmpty()) {
+            Log.d(TAG, "No se detectaron contornos, aplicando solo mejoras básicas")
+            return applyBasicEnhancements(srcMat)
+        }
+
+        // Encontrar el contorno más grande (presumiblemente el documento)
+        var maxArea = 0.0
+        var maxContourIndex = -1
+
+        for (i in contours.indices) {
+            val area = Imgproc.contourArea(contours[i])
+            if (area > maxArea) {
+                maxArea = area
+                maxContourIndex = i
             }
+        }
 
-            // Si no se encontraron contornos adecuados, usar la imagen original
-            if (maxContourIndex == -1 || contours.isEmpty()) {
-                Log.w(TAG, "No se detectaron contornos. Usando imagen original.")
-                return@withContext saveProcessedImage(originalBitmap, "original")
-            }
+        // Si el contorno es muy pequeño o no existe, usar solo mejoras básicas
+        if (maxContourIndex == -1 || maxArea < (originalWidth * originalHeight * 0.1)) {
+            Log.d(TAG, "Contorno demasiado pequeño (área: $maxArea), aplicando solo mejoras básicas")
+            return applyBasicEnhancements(srcMat)
+        }
 
-            // 7. Aproximar el contorno a un polígono (para obtener las esquinas)
+        try {
+            // Aproximar el contorno a un polígono
             val maxContour = contours[maxContourIndex]
-            val approxCurve = MatOfPoint2f()
             val contour2f = MatOfPoint2f()
             maxContour.convertTo(contour2f, CvType.CV_32FC2)
-
-            // Aproximar el contorno con precisión proporcional al perímetro
+            val approxCurve = MatOfPoint2f()
             val epsilon = 0.02 * Imgproc.arcLength(contour2f, true)
             Imgproc.approxPolyDP(contour2f, approxCurve, epsilon, true)
 
-            // 8. Extraer las cuatro esquinas para la corrección de perspectiva
+            // Verificar si tenemos 4 puntos (un rectángulo)
             val points = approxCurve.toArray()
 
-            // Si no se encontraron exactamente 4 puntos, aplicar solo otras mejoras
-            if (points.size != 4) {
-                Log.w(TAG, "No se detectaron las 4 esquinas del documento. Encontradas: ${points.size}")
-
-                // Aplicar mejoras básicas
-                val enhancedMat = Mat()
-                Imgproc.cvtColor(grayMat, enhancedMat, Imgproc.COLOR_GRAY2BGR)
-
-                // Mejorar contraste usando CLAHE (Contrast Limited Adaptive Histogram Equalization)
-                val grayEnhanced = Mat()
-                Imgproc.cvtColor(enhancedMat, grayEnhanced, Imgproc.COLOR_BGR2GRAY)
-                val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
-                clahe.apply(grayEnhanced, grayEnhanced)
-
-                // Convertir de vuelta a BGR
-                Imgproc.cvtColor(grayEnhanced, enhancedMat, Imgproc.COLOR_GRAY2BGR)
-
-                // Convertir a bitmap y guardar
-                val enhancedBitmap = Bitmap.createBitmap(enhancedMat.cols(), enhancedMat.rows(), Bitmap.Config.ARGB_8888)
-                Utils.matToBitmap(enhancedMat, enhancedBitmap)
-
-                return@withContext saveProcessedImage(enhancedBitmap, "enhanced")
+            if (points.size == 4) {
+                Log.d(TAG, "Detectadas 4 esquinas, aplicando corrección de perspectiva")
+                val result = applyPerspectiveCorrection(srcMat, points)
+                contour2f.release()
+                approxCurve.release()
+                return result
+            } else {
+                Log.d(TAG, "No se detectaron exactamente 4 esquinas (${points.size}), aplicando solo mejoras básicas")
+                contour2f.release()
+                approxCurve.release()
+                return applyBasicEnhancements(srcMat)
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error al procesar contornos: ${e.message}", e)
+            return applyBasicEnhancements(srcMat)
+        }
+    }
 
-            // Ordenar los puntos correctamente (superior-izquierda, superior-derecha, inferior-derecha, inferior-izquierda)
-            val sortedPoints = sortPoints(points)
+    /**
+     * Aplica corrección de perspectiva si se detectan las cuatro esquinas
+     */
+    private fun applyPerspectiveCorrection(srcMat: Mat, points: Array<Point>): Bitmap {
+        // Ordenar puntos (superior-izquierda, superior-derecha, inferior-derecha, inferior-izquierda)
+        val sortedPoints = sortPoints(points)
 
-            // 9. Calcular dimensiones para la imagen transformada
-            val width = Math.max(
-                distance(sortedPoints[0], sortedPoints[1]),
-                distance(sortedPoints[2], sortedPoints[3])
-            ).toInt()
+        // Calcular dimensiones para la imagen transformada
+        val width = maxOf(
+            distance(sortedPoints[0], sortedPoints[1]),
+            distance(sortedPoints[2], sortedPoints[3])
+        ).toInt()
 
-            val height = Math.max(
-                distance(sortedPoints[0], sortedPoints[3]),
-                distance(sortedPoints[1], sortedPoints[2])
-            ).toInt()
+        val height = maxOf(
+            distance(sortedPoints[0], sortedPoints[3]),
+            distance(sortedPoints[1], sortedPoints[2])
+        ).toInt()
 
-            // 10. Definir puntos destino para la transformación
-            val dst = MatOfPoint2f(
-                Point(0.0, 0.0),
-                Point(width.toDouble(), 0.0),
-                Point(width.toDouble(), height.toDouble()),
-                Point(0.0, height.toDouble())
-            )
+        // Evitar dimensiones extremas
+        if (width <= 0 || height <= 0 || width > 5000 || height > 5000) {
+            Log.w(TAG, "Dimensiones inválidas calculadas: $width x $height, usando mejoras básicas")
+            return applyBasicEnhancements(srcMat)
+        }
 
-            // 11. Aplicar la transformación de perspectiva
-            val srcPoints = MatOfPoint2f(*sortedPoints)
-            val perspectiveTransform = Imgproc.getPerspectiveTransform(srcPoints, dst)
-            val correctedMat = Mat()
-            Imgproc.warpPerspective(srcMat, correctedMat, perspectiveTransform, Size(width.toDouble(), height.toDouble()))
+        // Definir puntos destino para la transformación
+        val dst = MatOfPoint2f(
+            Point(0.0, 0.0),
+            Point(width.toDouble(), 0.0),
+            Point(width.toDouble(), height.toDouble()),
+            Point(0.0, height.toDouble())
+        )
 
-            // 12. Mejorar la imagen para OCR
-            // Convertir a escala de grises
-            val correctedGray = Mat()
-            Imgproc.cvtColor(correctedMat, correctedGray, Imgproc.COLOR_BGR2GRAY)
+        // Aplicar la transformación de perspectiva
+        val srcPoints = MatOfPoint2f(*sortedPoints)
+        val perspectiveTransform = Imgproc.getPerspectiveTransform(srcPoints, dst)
+        val correctedMat = Mat()
+        Imgproc.warpPerspective(srcMat, correctedMat, perspectiveTransform, Size(width.toDouble(), height.toDouble()))
 
-            // Aplicar umbral adaptativo
-            val thresholdMat = Mat()
+        // Aplicar mejoras adicionales al resultado
+        val enhancedMat = applyEnhancementsToMat(correctedMat)
+
+        // Convertir a bitmap
+        val resultBitmap = Bitmap.createBitmap(enhancedMat.cols(), enhancedMat.rows(), Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(enhancedMat, resultBitmap)
+
+        // Liberar recursos
+        correctedMat.release()
+        enhancedMat.release()
+        perspectiveTransform.release()
+        srcPoints.release()
+        dst.release()
+
+        return resultBitmap
+    }
+
+    /**
+     * Aplica mejoras básicas a la imagen cuando no se puede hacer corrección de perspectiva
+     */
+    private fun applyBasicEnhancements(srcMat: Mat): Bitmap {
+        val enhancedMat = applyEnhancementsToMat(srcMat)
+
+        // Convertir a bitmap
+        val resultBitmap = Bitmap.createBitmap(enhancedMat.cols(), enhancedMat.rows(), Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(enhancedMat, resultBitmap)
+
+        enhancedMat.release()
+
+        return resultBitmap
+    }
+
+    /**
+     * Aplica mejoras de imagen (contraste, nitidez) a una Mat
+     */
+    private fun applyEnhancementsToMat(inputMat: Mat): Mat {
+        val enhancedMat = Mat()
+
+        // Convertir a escala de grises si no lo está
+        if (inputMat.channels() > 1) {
+            val grayMat = Mat()
+            Imgproc.cvtColor(inputMat, grayMat, Imgproc.COLOR_BGR2GRAY)
+
+            // Aplicar ecualización adaptativa de histograma (CLAHE)
+            val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
+            clahe.apply(grayMat, grayMat)
+
+            // Aplicar umbral adaptativo para mejorar el texto
             Imgproc.adaptiveThreshold(
-                correctedGray,
-                thresholdMat,
+                grayMat,
+                enhancedMat,
                 255.0,
                 Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C,
                 Imgproc.THRESH_BINARY,
@@ -246,64 +364,51 @@ class ImageProcessingService @Inject constructor(
                 2.0
             )
 
-            // 13. Convertir a bitmap y guardar
-            val resultBitmap = Bitmap.createBitmap(thresholdMat.cols(), thresholdMat.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(thresholdMat, resultBitmap)
+            grayMat.release()
+        } else {
+            // Ya está en escala de grises
+            val clahe = Imgproc.createCLAHE(2.0, Size(8.0, 8.0))
+            clahe.apply(inputMat, enhancedMat)
 
-            return@withContext saveProcessedImage(resultBitmap, "processed")
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error en el procesamiento CV: ${e.message}", e)
-            // En caso de error, devolver la imagen original
-            return@withContext imageUri
+            // Aplicar umbral adaptativo
+            Imgproc.adaptiveThreshold(
+                enhancedMat,
+                enhancedMat,
+                255.0,
+                Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C,
+                Imgproc.THRESH_BINARY,
+                11,
+                2.0
+            )
         }
+
+        return enhancedMat
     }
 
     /**
      * Ordena los puntos en el orden: superior-izquierda, superior-derecha, inferior-derecha, inferior-izquierda
      */
     private fun sortPoints(points: Array<Point>): Array<Point> {
-        val sortedPoints = arrayOfNulls<Point>(4)
+        val result = arrayOfNulls<Point>(4)
 
-        // Calcular la suma y diferencia de coordenadas x e y
-        val sumCoords = DoubleArray(points.size)
-        val diffCoords = DoubleArray(points.size)
-
-        for (i in points.indices) {
-            sumCoords[i] = points[i].x + points[i].y
-            diffCoords[i] = points[i].x - points[i].y
-        }
+        // Calcular la suma y diferencia de coordenadas
+        val sumPoints = points.map { it.x + it.y }
+        val diffPoints = points.map { it.x - it.y }
 
         // Superior izquierda: punto con menor suma
-        var minIndex = 0
-        for (i in 1 until sumCoords.size) {
-            if (sumCoords[i] < sumCoords[minIndex]) minIndex = i
-        }
-        sortedPoints[0] = points[minIndex]
+        result[0] = points[sumPoints.indexOf(sumPoints.minOrNull())]
 
         // Inferior derecha: punto con mayor suma
-        var maxIndex = 0
-        for (i in 1 until sumCoords.size) {
-            if (sumCoords[i] > sumCoords[maxIndex]) maxIndex = i
-        }
-        sortedPoints[2] = points[maxIndex]
+        result[2] = points[sumPoints.indexOf(sumPoints.maxOrNull())]
 
         // Superior derecha: punto con mayor diferencia
-        maxIndex = 0
-        for (i in 1 until diffCoords.size) {
-            if (diffCoords[i] > diffCoords[maxIndex]) maxIndex = i
-        }
-        sortedPoints[1] = points[maxIndex]
+        result[1] = points[diffPoints.indexOf(diffPoints.maxOrNull())]
 
         // Inferior izquierda: punto con menor diferencia
-        minIndex = 0
-        for (i in 1 until diffCoords.size) {
-            if (diffCoords[i] < diffCoords[minIndex]) minIndex = i
-        }
-        sortedPoints[3] = points[minIndex]
+        result[3] = points[diffPoints.indexOf(diffPoints.minOrNull())]
 
         @Suppress("UNCHECKED_CAST")
-        return sortedPoints as Array<Point>
+        return result as Array<Point>
     }
 
     /**
@@ -314,7 +419,7 @@ class ImageProcessingService @Inject constructor(
     }
 
     /**
-     * Guarda la imagen procesada en el almacenamiento interno y devuelve su URI
+     * Guarda la imagen procesada en el almacenamiento interno
      */
     private fun saveProcessedImage(bitmap: Bitmap, prefix: String): Uri {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
@@ -327,7 +432,7 @@ class ImageProcessingService @Inject constructor(
 
         val outputFile = File(outputDir, filename)
         FileOutputStream(outputFile).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
         }
 
         return outputFile.toUri()
