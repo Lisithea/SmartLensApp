@@ -43,8 +43,8 @@ class SettingsViewModel @Inject constructor(
         // Inicializar ThemeManager
         ThemeManager.init(context)
 
-        // Cargar valores iniciales
-        _apiKey.value = geminiService.getApiKey()
+        // Cargar valores iniciales - usamos el método loadApiKey para obtener la API key
+        loadApiKey()
         _selectedLanguage.value = LanguageHelper.getCurrentLanguage(context)
 
         // Registrar observador para el tema
@@ -55,6 +55,18 @@ class SettingsViewModel @Inject constructor(
         Log.d("SettingsViewModel", "API Key: ${_apiKey.value}, Language: ${_selectedLanguage.value}, Dark Theme: ${_isDarkTheme.value}")
     }
 
+    /**
+     * Carga la API Key desde GeminiService
+     */
+    private fun loadApiKey() {
+        // Usamos un método alternativo para obtener la API key desde las preferencias directamente
+        val apiKeyFromPrefs = preferences.getString("api_key", "") ?: ""
+        _apiKey.value = apiKeyFromPrefs
+    }
+
+    /**
+     * Guarda la API Key
+     */
     fun saveApiKey(key: String) {
         viewModelScope.launch {
             geminiService.saveApiKey(key)

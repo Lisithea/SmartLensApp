@@ -115,6 +115,16 @@ dependencies {
     // LiveData para observar resultados de Work
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.6.2")
 
+    // ===== NUEVAS DEPENDENCIAS =====
+
+    // OpenCV para Android
+    implementation("com.github.jitpack:opencv:4.8.0")
+
+    // EasyPermissions para manejo de permisos
+    implementation("pub.devrel:easypermissions:3.0.0")
+
+    // ===== FIN NUEVAS DEPENDENCIAS =====
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

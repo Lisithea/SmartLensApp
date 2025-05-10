@@ -65,4 +65,21 @@ object AppModule {
     fun provideMotivationalQuotesService(@ApplicationContext context: Context): MotivationalQuotesService {
         return MotivationalQuotesService(context)
     }
+
+    @Provides
+    @Singleton
+    fun provideDocumentProcessingManager(@ApplicationContext context: Context): DocumentProcessingManager {
+        return DocumentProcessingManager(context, provideOcrService(context), provideGeminiService(context, provideGson()), provideExcelExportService(context))
+    }
+
+    @Provides
+    @Singleton
+    fun provideImageProcessingService(
+        @ApplicationContext context: Context,
+        ocrService: OcrService,
+        geminiService: GeminiService,
+        excelExportService: ExcelExportService
+    ): ImageProcessingService {
+        return ImageProcessingService(context, ocrService, geminiService, excelExportService)
+    }
 }

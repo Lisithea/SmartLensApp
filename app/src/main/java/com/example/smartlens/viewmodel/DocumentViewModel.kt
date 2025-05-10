@@ -9,11 +9,7 @@ import androidx.work.*
 import com.example.smartlens.R
 import com.example.smartlens.model.*
 import com.example.smartlens.repository.DocumentRepository
-import com.example.smartlens.service.DocumentProcessingManager
-import com.example.smartlens.service.DocumentShareService
-import com.example.smartlens.service.ExcelExportService
-import com.example.smartlens.service.GeminiService
-import com.example.smartlens.service.OcrService
+import com.example.smartlens.service.*
 import com.example.smartlens.worker.DocumentProcessingWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +33,7 @@ class DocumentViewModel @Inject constructor(
     private val shareService: DocumentShareService,
     private val workManager: WorkManager,
     private val processingManager: DocumentProcessingManager,
+    private val imageProcessingService: ImageProcessingService, // Nuevo servicio añadido
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -66,6 +63,10 @@ class DocumentViewModel @Inject constructor(
     // Nombre personalizado para exportación
     private val _customFileName = MutableStateFlow("")
     val customFileName: StateFlow<String> = _customFileName
+
+    // URI de la imagen procesada
+    private val _processedImageUri = MutableStateFlow<Uri?>(null)
+    val processedImageUri: StateFlow<Uri?> = _processedImageUri
 
     // ID de trabajo en progreso
     private var currentWorkId: UUID? = null
@@ -126,46 +127,95 @@ class DocumentViewModel @Inject constructor(
 
     /**
      * Procesa una imagen para extraer texto
+     * Ahora utiliza el nuevo servicio de procesamiento de imágenes
      */
     suspend fun processImage(imageUri: Uri) {
         withContext(Dispatchers.IO) {
             try {
-                Log.d(TAG, "Iniciando procesamiento de imagen: $imageUri")
+                Log.d(TAG, "Iniciando procesamiento de imagen con CV: $imageUri")
+                _processingState.update { DocumentProcessingState.Capturing }
 
-                // Delegar al ProcessingManager
-                val extractedText = processingManager.processImage(imageUri)
+                // Fase 1: Procesar la imagen con Computer Vision
+                val enhancedImageUri = imageProcessingService.enhanceImageWithComputerVision(imageUri)
+                _processedImageUri.value = enhancedImageUri
+                Log.d(TAG, "Imagen mejorada con CV: $enhancedImageUri")
+
+                // Fase 2: Extraer texto con OCR de la imagen mejorada
+                _processingState.update { DocumentProcessingState.ExtractingText }
+                val extractedText = ocrService.extractTextFromUri(enhancedImageUri)
+                processingManager.extractedText.value = extractedText
 
                 if (extractedText.isBlank()) {
                     throw IllegalStateException("No se pudo extraer texto de la imagen")
                 }
 
+                Log.d(TAG, "Texto extraído (${extractedText.length} caracteres)")
+
                 // Detectar tipo de documento
-                val documentType = processingManager.detectDocumentType(extractedText)
-                Log.d(TAG, "Tipo de documento detectado: $documentType")
+                val detectedType = ocrService.detectDocumentType(extractedText)
+                _processingState.update { DocumentProcessingState.ProcessingDocument(detectedType) }
+                Log.d(TAG, "Tipo de documento detectado: $detectedType")
+
+                // Extraer datos estructurados si es posible
+                try {
+                    val structuredData = ocrService.extractStructuredText(enhancedImageUri)
+                    processingManager.rawOcrResult.value = structuredData
+                    Log.d(TAG, "Datos estructurados extraídos: ${structuredData.keys}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error al extraer datos estructurados: ${e.message}")
+                }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error en processImage: ${e.message}", e)
+                _processingState.update { DocumentProcessingState.Error(e.message ?: "Error desconocido") }
                 _userMessage.value = context.getString(R.string.ocr_error)
             }
         }
     }
 
     /**
+     * Procesa una imagen y devuelve el texto extraído (para diagnóstico)
+     */
+    suspend fun processImageAndGetText(imageUri: Uri): String {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Mejora la imagen con CV primero
+                val enhancedUri = imageProcessingService.enhanceImageWithComputerVision(imageUri)
+                // Luego extrae el texto con OCR
+                val extractedText = ocrService.extractTextFromUri(enhancedUri)
+                extractedText
+            } catch (e: Exception) {
+                Log.e(TAG, "Error en processImageAndGetText: ${e.message}", e)
+                throw e
+            }
+        }
+    }
+
+    /**
      * Procesa el documento según el tipo seleccionado
+     * Utiliza el flujo completo con el nuevo servicio
      */
     fun processDocument(documentType: DocumentType) {
         viewModelScope.launch {
             try {
                 Log.d(TAG, "Procesando documento de tipo: $documentType")
+                _processingState.update { DocumentProcessingState.ProcessingDocument(documentType) }
 
-                // Procesar documento con el manager
-                val document = processingManager.processDocument(documentType)
+                // Obtener URI de la imagen procesada, o usar la temporal si no está disponible
+                val imageUri = _processedImageUri.value ?: tempImageUri
+                if (imageUri == null) {
+                    throw IllegalStateException("No hay imagen disponible para procesar")
+                }
+
+                // Proceso completo con el nuevo servicio de procesamiento
+                val document = imageProcessingService.processDocumentImage(imageUri, documentType)
 
                 // Guardar documento
                 repository.saveDocument(document)
 
                 // Actualizar estado
                 _currentDocument.value = document
+                _processingState.update { DocumentProcessingState.DocumentReady(document) }
 
                 // Mensaje de éxito
                 _userMessage.value = context.getString(R.string.document_saved)
@@ -183,161 +233,8 @@ class DocumentViewModel @Inject constructor(
                     else -> context.getString(R.string.processing_error_generic)
                 }
 
+                _processingState.update { DocumentProcessingState.Error(e.message ?: errorMessage) }
                 _userMessage.value = errorMessage
             }
         }
-    }
-
-    /**
-     * Carga un documento por ID
-     */
-    fun loadDocumentById(id: String) {
-        viewModelScope.launch {
-            try {
-                Log.d(TAG, "Cargando documento con ID: $id")
-                val document = repository.getDocumentById(id)
-                if (document != null) {
-                    _currentDocument.value = document
-                    // No actualizamos processingState aquí para mantener consistencia
-                    Log.d(TAG, "Documento cargado con éxito: ${document.getTypeDisplay()}")
-                } else {
-                    Log.e(TAG, "Documento no encontrado con ID: $id")
-                    _userMessage.value = context.getString(R.string.document_not_found_error)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error al cargar documento: ${e.message}", e)
-                _userMessage.value = context.getString(R.string.loading_error)
-            }
-        }
-    }
-
-    /**
-     * Elimina un documento
-     */
-    fun deleteDocument(id: String) {
-        viewModelScope.launch {
-            try {
-                Log.d(TAG, "Eliminando documento con ID: $id")
-                repository.deleteDocument(id)
-                loadRecentDocuments()
-                _userMessage.value = context.getString(R.string.document_deleted)
-
-                if (_currentDocument.value?.id == id) {
-                    _currentDocument.value = null
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error al eliminar documento: ${e.message}", e)
-                _userMessage.value = context.getString(R.string.error)
-            }
-        }
-    }
-
-    /**
-     * Cancela el procesamiento en curso
-     */
-    fun cancelProcessing() {
-        currentWorkId?.let { workId ->
-            Log.d(TAG, "Cancelando procesamiento en curso, Work ID: $workId")
-            workManager.cancelWorkById(workId)
-            currentWorkId = null
-        }
-
-        // Reiniciar el estado del processingManager
-        processingManager.reset()
-    }
-
-    /**
-     * Exporta documento a Excel
-     */
-    suspend fun exportToExcel(document: LogisticsDocument): Uri {
-        return withContext(Dispatchers.IO) {
-            Log.d(TAG, "Exportando documento a Excel: ${document.id}")
-            processingManager.generateExcelFile(document)
-        }
-    }
-
-    /**
-     * Comparte documento
-     */
-    fun shareDocument(document: LogisticsDocument) {
-        Log.d(TAG, "Compartiendo documento: ${document.id}")
-        shareService.shareDocument(document)
-    }
-
-    /**
-     * Comparte como Excel
-     */
-    fun shareAsExcel(document: LogisticsDocument) {
-        viewModelScope.launch {
-            Log.d(TAG, "Compartiendo documento como Excel: ${document.id}")
-            try {
-                val excelUri = exportToExcel(document)
-                shareService.shareAsExcel(excelUri)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error al compartir Excel: ${e.message}", e)
-                _userMessage.value = "Error al compartir Excel: ${e.message}"
-            }
-        }
-    }
-
-    /**
-     * Genera código QR
-     */
-    fun generateQrCode(document: LogisticsDocument): Bitmap {
-        Log.d(TAG, "Generando código QR para documento: ${document.id}")
-        return shareService.generateQrCode(document)
-    }
-
-    /**
-     * Reinicia el estado
-     */
-    fun resetState() {
-        Log.d(TAG, "Reiniciando estado del ViewModel")
-        processingManager.reset()
-        _customFileName.value = ""
-        tempImageUri = null
-        currentWorkId = null
-    }
-
-    /**
-     * Marca un mensaje de usuario como leído
-     */
-    fun messageShown() {
-        _userMessage.value = null
-    }
-
-    /**
-     * Procesa una imagen y devuelve el texto extraído (para diagnóstico)
-     */
-    suspend fun processImageAndGetText(imageUri: Uri): String {
-        return withContext(Dispatchers.IO) {
-            try {
-                processingManager.processImage(imageUri)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error en processImageAndGetText: ${e.message}", e)
-                throw e
-            }
-        }
-    }
-
-    /**
-     * Obtiene el tipo de documento detectado basado en el texto extraído actual
-     */
-    fun getDetectedDocumentType(): DocumentType {
-        val text = extractedText.value
-        return if (text.isNotBlank()) {
-            ocrService.detectDocumentType(text)
-        } else {
-            DocumentType.UNKNOWN
-        }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-
-        // Cancelar cualquier trabajo en progreso cuando se elimine el ViewModel
-        currentWorkId?.let { workId ->
-            workManager.cancelWorkById(workId)
-        }
-    }
-}
+    }}

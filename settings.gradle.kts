@@ -11,6 +11,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Añadir repositorio de JitPack para OpenCV
+        maven { url = uri("https://jitpack.io") }
     }
 }
 

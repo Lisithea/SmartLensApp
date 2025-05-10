@@ -31,6 +31,9 @@ import com.example.smartlens.ui.components.LocalSnackbarManager
 import com.example.smartlens.ui.navigation.Screen
 import com.example.smartlens.viewmodel.LoginViewModel
 import kotlinx.coroutines.launch
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -173,8 +176,8 @@ fun LoginScreen(
             // Mensaje de error
             AnimatedVisibility(
                 visible = errorMessage.isNotEmpty(),
-                enter = androidx.compose.animation.fadeIn(),
-                exit = androidx.compose.animation.fadeOut()
+                enter = fadeIn(),
+                exit = fadeOut()
             ) {
                 Text(
                     text = errorMessage,
@@ -241,5 +244,4 @@ fun LoginScreen(
                 Text("¿Necesitas ayuda? Contáctanos")
             }
         }
-    }
-}
+    }}

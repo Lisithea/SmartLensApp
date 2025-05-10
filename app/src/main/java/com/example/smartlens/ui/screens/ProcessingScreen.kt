@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -246,7 +247,7 @@ fun ProcessingScreen(
                                     modifier = Modifier.padding(16.dp)
                                 ) {
                                     CircularProgressIndicator(
-                                        progress = { progress },
+                                        progress = progress,
                                         modifier = Modifier.size(120.dp),
                                         strokeWidth = 8.dp,
                                         color = MaterialTheme.colorScheme.primary
@@ -264,7 +265,7 @@ fun ProcessingScreen(
 
                         // Barra de progreso
                         LinearProgressIndicator(
-                            progress = { progress },
+                            progress = progress,
                             modifier = Modifier.fillMaxWidth(),
                             color = MaterialTheme.colorScheme.primary,
                             trackColor = MaterialTheme.colorScheme.primaryContainer
