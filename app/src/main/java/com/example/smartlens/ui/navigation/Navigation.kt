@@ -211,11 +211,15 @@ fun MainNavigation(
                 arguments = listOf(
                     navArgument("imageUri") {
                         type = NavType.StringType
+                        nullable = false
                     }
                 )
             ) { backStackEntry ->
-                val imageUri = backStackEntry.arguments?.getString("imageUri") ?: return@composable
-                DocumentTypeScreen(navController = navController, imageUriString = imageUri)
+                val imageUriString = backStackEntry.arguments?.getString("imageUri") ?: return@composable
+                DocumentTypeScreen(
+                    navController = navController,
+                    imageUriString = imageUriString
+                )
             }
 
             composable(
@@ -223,15 +227,17 @@ fun MainNavigation(
                 arguments = listOf(
                     navArgument("documentType") {
                         type = NavType.StringType
+                        nullable = false
                     },
                     navArgument("imageUri") {
                         type = NavType.StringType
+                        nullable = false
                     }
                 )
             ) { backStackEntry ->
-                val documentType = backStackEntry.arguments?.getString("documentType") ?: return@composable
-                val imageUri = backStackEntry.arguments?.getString("imageUri") ?: return@composable
-                ProcessingScreen(navController = navController, documentTypeString = documentType, imageUriString = imageUri)
+                val documentTypeString = backStackEntry.arguments?.getString("documentType") ?: return@composable
+                val imageUriString = backStackEntry.arguments?.getString("imageUri") ?: return@composable
+                ProcessingScreen(navController = navController, documentTypeString = documentTypeString, imageUriString = imageUriString)
             }
 
             // Pantallas de detalle y exportación

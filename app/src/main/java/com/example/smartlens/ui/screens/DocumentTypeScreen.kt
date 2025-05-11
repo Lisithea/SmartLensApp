@@ -50,7 +50,9 @@ fun DocumentTypeScreen(
     val context = LocalContext.current
     val snackbarManager = LocalSnackbarManager.current
     val coroutineScope = rememberCoroutineScope()
-    val imageUri = Uri.parse(imageUriString)
+    val decodedUri = Uri.decode(imageUriString)
+    val imageUri = Uri.parse(decodedUri)
+
 
     val processingState by viewModel.processingState.collectAsState()
     val extractedText by viewModel.extractedText.collectAsState()
@@ -62,6 +64,17 @@ fun DocumentTypeScreen(
     var showTextPreview by remember { mutableStateOf(false) }
     var customFileName by remember { mutableStateOf("") }
     var showCustomFileNameDialog by remember { mutableStateOf(false) }
+
+    Button(
+        onClick = {
+            val selectedType = "exampleType" // Reemplaza con la lógica para obtener el tipo seleccionado
+            navController.navigate(
+                Screen.Processing.createRoute(selectedType, imageUriString)
+            )
+        }
+    ) {
+        Text("Procesar Documento")
+    }
 
     // Iniciar procesamiento de OCR
     LaunchedEffect(key1 = imageUri) {
@@ -366,7 +379,7 @@ fun DocumentTypeScreen(
                         snackbarManager?.showInfo("Procesando documento...")
 
                         // Navegar a la pantalla de procesamiento
-                        navController.navigate("${Screen.Processing.route}/${type.name}/${imageUriString}")
+                        navController.navigate("${Screen.Processing.route}/${type.name}/${Uri.encode(imageUriString)}")
                     }
                 },
                 enabled = selectedType != null && !isLoading,
