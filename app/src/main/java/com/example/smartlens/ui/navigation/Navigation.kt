@@ -1,5 +1,6 @@
 package com.example.smartlens.ui.navigation
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,7 +21,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -46,7 +46,7 @@ import com.example.smartlens.viewmodel.LoginViewModel
 import com.example.smartlens.viewmodel.SettingsViewModel
 
 /**
- * Componente principal de navegación que incluye la BottomBar
+ * Main navigation component for the app
  */
 @Composable
 fun MainNavigation(
@@ -59,25 +59,25 @@ fun MainNavigation(
     val loginViewModel: LoginViewModel = hiltViewModel()
     val context = LocalContext.current
 
-    // Estado de autenticación
+    // Authentication state
     val isAuthenticated by loginViewModel.isAuthenticated.collectAsState()
 
-    // Estado para la API Key
+    // API Key state
     val apiKey by settingsViewModel.apiKey.collectAsState()
 
-    // Estado para el saludo y frases motivacionales
+    // Greeting and motivational quote state
     val greeting = userProfileManager.getGreeting()
     val quote = motivationalQuotesService.getRandomQuote()
     val quotesEnabled by motivationalQuotesService.quotesEnabled.collectAsState()
 
-    // Determinar la pantalla inicial basada en autenticación y API Key
+    // Determine start destination based on auth and API Key
     val startDestination = when {
         !isAuthenticated -> Screen.Login.route
         apiKey.isEmpty() -> Screen.ApiKeySetup.route
         else -> Screen.Home.route
     }
 
-    // Efecto para redirigir al inicio de sesión si no está autenticado
+    // Redirect to login if not authenticated
     LaunchedEffect(isAuthenticated) {
         if (!isAuthenticated) {
             navController.navigate(Screen.Login.route) {
@@ -86,11 +86,11 @@ fun MainNavigation(
         }
     }
 
-    // Obtener la ruta actual
+    // Get current route
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: ""
 
-    // Definir los elementos de la barra de navegación
+    // Define navigation items
     val bottomNavItems = listOf(
         BottomNavItem(
             route = Screen.Home.route,
@@ -109,28 +109,28 @@ fun MainNavigation(
         )
     )
 
-    // Determinar si se debe mostrar la barra de navegación
+    // Determine whether to show the bottom bar
     val showBottomBar = isAuthenticated && !apiKey.isEmpty() &&
-            (currentRoute == Screen.Home.route ||
-                    currentRoute == Screen.Camera.route ||
-                    currentRoute == Screen.Settings.route)
+            (currentRoute.startsWith(Screen.Home.route) ||
+                    currentRoute.startsWith(Screen.Camera.route) ||
+                    currentRoute.startsWith(Screen.Settings.route))
 
     Scaffold(
         topBar = {
-            // Solo mostrar el saludo en las pantallas principales
+            // Only show greeting on main screens
             if (showBottomBar) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Saludo personalizado
+                    // Personalized greeting
                     Text(
                         text = greeting,
                         style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
                     )
 
-                    // Frase motivacional si está activada
+                    // Motivational quote if enabled
                     if (quotesEnabled && quote.isNotEmpty()) {
                         Text(
                             text = "\"$quote\"",
@@ -151,9 +151,9 @@ fun MainNavigation(
                         NavigationBarItem(
                             icon = { Icon(item.icon, contentDescription = item.title) },
                             label = { Text(item.title) },
-                            selected = currentRoute == item.route,
+                            selected = currentRoute.startsWith(item.route),
                             onClick = {
-                                if (currentRoute != item.route) {
+                                if (!currentRoute.startsWith(item.route)) {
                                     navController.navigate(item.route) {
                                         popUpTo(navController.graph.findStartDestination().id) {
                                             saveState = true
@@ -174,17 +174,16 @@ fun MainNavigation(
             startDestination = startDestination,
             modifier = Modifier.padding(innerPadding)
         ) {
-            // Pantalla de inicio de sesión
+            // Login and setup screens
             composable(Screen.Login.route) {
                 LoginScreen(navController = navController)
             }
 
-            // Pantalla de configuración inicial
             composable(Screen.ApiKeySetup.route) {
                 ApiKeySetupScreen(navController = navController)
             }
 
-            // Pantallas principales
+            // Main screens
             composable(Screen.Home.route) {
                 HomeScreen(
                     navController = navController,
@@ -205,13 +204,12 @@ fun MainNavigation(
                 )
             }
 
-            // Flujo de procesamiento de documentos
+            // Document processing flow
             composable(
-                route = Screen.DocumentType.route,
+                route = "${Screen.DocumentType.route}/{imageUri}",
                 arguments = listOf(
                     navArgument("imageUri") {
                         type = NavType.StringType
-                        nullable = false
                     }
                 )
             ) { backStackEntry ->
@@ -223,24 +221,26 @@ fun MainNavigation(
             }
 
             composable(
-                route = Screen.Processing.route,
+                route = "${Screen.Processing.route}/{documentType}/{imageUri}",
                 arguments = listOf(
                     navArgument("documentType") {
                         type = NavType.StringType
-                        nullable = false
                     },
                     navArgument("imageUri") {
                         type = NavType.StringType
-                        nullable = false
                     }
                 )
             ) { backStackEntry ->
                 val documentTypeString = backStackEntry.arguments?.getString("documentType") ?: return@composable
                 val imageUriString = backStackEntry.arguments?.getString("imageUri") ?: return@composable
-                ProcessingScreen(navController = navController, documentTypeString = documentTypeString, imageUriString = imageUriString)
+                ProcessingScreen(
+                    navController = navController,
+                    documentTypeString = documentTypeString,
+                    imageUriString = imageUriString
+                )
             }
 
-            // Pantallas de detalle y exportación
+            // Document details and export
             composable(
                 route = "${Screen.DocumentDetails.route}/{documentId}",
                 arguments = listOf(
@@ -250,7 +250,10 @@ fun MainNavigation(
                 )
             ) { backStackEntry ->
                 val documentId = backStackEntry.arguments?.getString("documentId") ?: return@composable
-                DocumentDetailsScreen(navController = navController, documentId = documentId)
+                DocumentDetailsScreen(
+                    navController = navController,
+                    documentId = documentId
+                )
             }
 
             composable(
@@ -262,10 +265,13 @@ fun MainNavigation(
                 )
             ) { backStackEntry ->
                 val documentId = backStackEntry.arguments?.getString("documentId") ?: return@composable
-                ExportScreen(navController = navController, documentId = documentId)
+                ExportScreen(
+                    navController = navController,
+                    documentId = documentId
+                )
             }
 
-            // Pantalla de diagnóstico
+            // Diagnostic screen
             composable(Screen.Diagnostic.route) {
                 val documentViewModel = hiltViewModel<DocumentViewModel>()
                 val ocrService = OcrServiceFactory.create(context)
@@ -282,7 +288,7 @@ fun MainNavigation(
 }
 
 /**
- * Clase de datos para los elementos de la barra de navegación inferior
+ * Data class for bottom navigation items
  */
 data class BottomNavItem(
     val route: String,

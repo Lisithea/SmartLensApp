@@ -30,7 +30,7 @@ import com.example.smartlens.R
 import com.example.smartlens.model.DocumentProcessingState
 import com.example.smartlens.model.DocumentType
 import com.example.smartlens.ui.components.LocalSnackbarManager
-import com.example.smartlens.ui.navigation.Screen
+import com.example.smartlens.ui.navigation.NavigationActions
 import com.example.smartlens.viewmodel.DocumentViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -49,52 +49,56 @@ fun ProcessingScreen(
     val snackbarManager = LocalSnackbarManager.current
     val coroutineScope = rememberCoroutineScope()
 
-    // Parsear parámetros
+    // Parse parameters
     val documentType = try {
         DocumentType.valueOf(documentTypeString)
     } catch (e: Exception) {
-        Log.e(TAG, "Error al parsear tipo de documento: $documentTypeString", e)
+        Log.e(TAG, "Invalid document type: $documentTypeString", e)
         DocumentType.UNKNOWN
     }
 
-    val imageUri = Uri.parse(imageUriString)
+    // Decode URI and parse
+    val decodedUri = Uri.decode(imageUriString)
+    val imageUri = Uri.parse(decodedUri)
+
+    // ViewModel states
     val processingState by viewModel.processingState.collectAsState()
     val currentDocument by viewModel.currentDocument.collectAsState()
     val extractedText by viewModel.extractedText.collectAsState()
     val structuredData by viewModel.structuredData.collectAsState()
     val isProcessing by viewModel.isProcessing.collectAsState()
 
-    // Estado de animación
+    // Animation states
     var currentStep by remember { mutableStateOf(1) }
     var progress by remember { mutableStateOf(0.05f) }
 
-    // Estado para mostrar y determinar la duración de procesamiento
+    // Process duration tracking
     var elapsedTime by remember { mutableStateOf(0) }
     var processing by remember { mutableStateOf(true) }
 
-    // Estado para mostrar información detallada
+    // Detailed info display state
     var showRawData by remember { mutableStateOf(false) }
 
-    // Estado para controlar errores y reintentos
+    // Error handling and retry states
     var hasError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
     var isProcessingCompleted by remember { mutableStateOf(false) }
     var hasTriedProcessing by remember { mutableStateOf(false) }
 
-    // Verificador del estado de procesamiento actual
+    // Current processing state text
     val processingStateText = remember(processingState) {
         when (processingState) {
-            is DocumentProcessingState.Idle -> "Iniciando procesamiento..."
-            is DocumentProcessingState.Capturing -> "Capturando imagen..."
-            is DocumentProcessingState.ExtractingText -> "Extrayendo texto..."
-            is DocumentProcessingState.ProcessingDocument -> "Analizando documento..."
-            is DocumentProcessingState.DocumentReady -> "¡Documento listo!"
+            is DocumentProcessingState.Idle -> "Starting processing..."
+            is DocumentProcessingState.Capturing -> "Capturing image..."
+            is DocumentProcessingState.ExtractingText -> "Extracting text..."
+            is DocumentProcessingState.ProcessingDocument -> "Analyzing document..."
+            is DocumentProcessingState.DocumentReady -> "Document ready!"
             is DocumentProcessingState.Error -> "Error: ${(processingState as DocumentProcessingState.Error).message}"
-            else -> "Procesando..."
+            else -> "Processing..."
         }
     }
 
-    // Animaciones para efectos visuales
+    // Visual effect animations
     val infiniteTransition = rememberInfiniteTransition(label = "processingAnimation")
     val pulseAlpha = infiniteTransition.animateFloat(
         initialValue = 0.6f,
@@ -106,95 +110,93 @@ fun ProcessingScreen(
         label = "pulseAnimation"
     )
 
-    // Iniciar procesamiento si no está ya en curso o completado
+    // Start processing if not already in progress or completed
     LaunchedEffect(key1 = imageUri, key2 = documentType) {
         if (!isProcessingCompleted && !hasTriedProcessing) {
-            Log.d(TAG, "⚠️ Iniciando procesamiento. Estado: $processingState, Tipo: $documentType")
+            Log.d(TAG, "⚠️ Starting processing. State: $processingState, Type: $documentType")
             hasError = false
             processing = true
             hasTriedProcessing = true
 
-            snackbarManager?.showInfo("Procesando documento...")
+            snackbarManager?.showInfo("Processing document...")
 
             try {
-                // Actualizar UI para mostrar que estamos procesando
+                // Update UI to show we're processing
                 currentStep = 1
                 progress = 0.2f
 
-                // Iniciar el procesamiento del documento
+                // Start document processing
                 viewModel.processDocument(documentType)
             } catch (e: Exception) {
-                Log.e(TAG, "Error al iniciar procesamiento: ${e.message}", e)
+                Log.e(TAG, "Error starting processing: ${e.message}", e)
                 hasError = true
-                errorMessage = e.message ?: "Error desconocido al procesar el documento"
+                errorMessage = e.message ?: "Unknown error processing document"
                 processing = false
             }
         }
     }
 
-    // Contador de tiempo de procesamiento
+    // Processing time counter
     LaunchedEffect(key1 = processing) {
         while (processing) {
-            delay(1000) // Incrementar cada segundo
+            delay(1000) // Increment every second
             elapsedTime++
 
-            // Si ha pasado demasiado tiempo, podríamos considerar que algo salió mal
+            // Consider something went wrong if it takes too long
             if (elapsedTime > 60 && !isProcessingCompleted && isProcessing) {
                 hasError = true
-                errorMessage = "El procesamiento está tardando demasiado. Puede haber un problema con la API Key o la conexión a Internet."
+                errorMessage = "Processing is taking too long. There might be an issue with the API Key or Internet connection."
                 processing = false
                 viewModel.cancelProcessing()
             }
         }
     }
 
-    // Manejar la animación de procesamiento y cambios de estado
+    // Handle processing state changes and animations
     LaunchedEffect(key1 = processingState) {
-        Log.d(TAG, "⚠️ Estado de procesamiento actualizado: $processingState")
+        Log.d(TAG, "⚠️ Processing state updated: $processingState")
 
         when (processingState) {
             is DocumentProcessingState.ExtractingText -> {
-                Log.d(TAG, "Estado: Extrayendo texto")
+                Log.d(TAG, "State: Extracting text")
                 currentStep = 1
                 progress = 0.3f
-                snackbarManager?.showInfo("Extrayendo texto del documento...")
+                snackbarManager?.showInfo("Extracting text from document...")
             }
             is DocumentProcessingState.ProcessingDocument -> {
-                Log.d(TAG, "Estado: Procesando documento")
-                // Animar progreso
+                Log.d(TAG, "State: Processing document")
+                // Animate progress
                 currentStep = 2
                 for (i in 30..80) {
                     progress = i / 100f
                     delay(50)
                 }
-                snackbarManager?.showInfo("Analizando documento...")
+                snackbarManager?.showInfo("Analyzing document...")
             }
             is DocumentProcessingState.DocumentReady -> {
-                Log.d(TAG, "Estado: Documento listo")
+                Log.d(TAG, "State: Document ready")
                 currentStep = 3
                 progress = 1.0f
-                processing = false // Detener el contador de tiempo
+                processing = false // Stop the time counter
                 isProcessingCompleted = true
-                snackbarManager?.showSuccess("¡Documento procesado correctamente!")
+                snackbarManager?.showSuccess("Document processed successfully!")
 
-                delay(1000) // Esperar un momento antes de navegar para mostrar el progreso completo
+                delay(1000) // Wait a moment before navigating to show complete progress
                 currentDocument?.let { document ->
-                    Log.d(TAG, "Navegando a detalles del documento: ${document.id}")
-                    navController.navigate("${Screen.DocumentDetails.route}/${document.id}") {
-                        popUpTo(Screen.Camera.route)
-                    }
+                    Log.d(TAG, "Navigating to document details: ${document.id}")
+                    NavigationActions.navigateToDocumentDetails(navController, document.id)
                 }
             }
             is DocumentProcessingState.Error -> {
                 val error = (processingState as DocumentProcessingState.Error).message
-                Log.e(TAG, "Error en procesamiento: $error")
+                Log.e(TAG, "Error in processing: $error")
                 hasError = true
                 errorMessage = error
-                processing = false // Detener el contador de tiempo
+                processing = false // Stop the time counter
                 snackbarManager?.showError("Error: $errorMessage")
             }
             else -> {
-                // Otros estados
+                // Other states
             }
         }
     }
@@ -205,7 +207,7 @@ fun ProcessingScreen(
                 title = { Text(stringResource(R.string.processing)) },
                 navigationIcon = {
                     IconButton(onClick = {
-                        // Cancelar el procesamiento y volver atrás
+                        // Cancel processing and go back
                         viewModel.cancelProcessing()
                         navController.navigateUp()
                     }) {
@@ -227,7 +229,7 @@ fun ProcessingScreen(
         ) {
             when {
                 hasError -> {
-                    // Mostrar error con opción de reintentar
+                    // Show error with retry option
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -271,13 +273,13 @@ fun ProcessingScreen(
                                     currentStep = 1
                                     progress = 0.05f
 
-                                    // Reiniciar el procesamiento
+                                    // Restart processing
                                     coroutineScope.launch {
                                         try {
                                             viewModel.processDocument(documentType)
                                         } catch (e: Exception) {
                                             hasError = true
-                                            errorMessage = e.message ?: "Error al reintentar"
+                                            errorMessage = e.message ?: "Error retrying"
                                             processing = false
                                         }
                                     }
@@ -285,7 +287,7 @@ fun ProcessingScreen(
                             ) {
                                 Icon(Icons.Default.Refresh, contentDescription = null)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Reintentar")
+                                Text("Retry")
                             }
 
                             OutlinedButton(
@@ -295,13 +297,13 @@ fun ProcessingScreen(
                             }
                         }
 
-                        // Información adicional para depuración
+                        // Additional debug info
                         Spacer(modifier = Modifier.height(24.dp))
 
                         OutlinedButton(
                             onClick = { showRawData = !showRawData }
                         ) {
-                            Text(if (showRawData) "Ocultar información de depuración" else "Mostrar información de depuración")
+                            Text(if (showRawData) "Hide debug info" else "Show debug info")
                         }
 
                         if (showRawData) {
@@ -316,28 +318,28 @@ fun ProcessingScreen(
                             ) {
                                 Column(modifier = Modifier.padding(16.dp)) {
                                     Text(
-                                        text = "Estado de procesamiento: $processingState",
+                                        text = "Processing state: $processingState",
                                         style = MaterialTheme.typography.bodySmall
                                     )
 
                                     Spacer(modifier = Modifier.height(8.dp))
 
                                     Text(
-                                        text = "Tipo de documento: $documentType",
+                                        text = "Document type: $documentType",
                                         style = MaterialTheme.typography.bodySmall
                                     )
 
                                     Spacer(modifier = Modifier.height(8.dp))
 
                                     Text(
-                                        text = "URI de imagen: $imageUri",
+                                        text = "Image URI: $imageUri",
                                         style = MaterialTheme.typography.bodySmall
                                     )
 
                                     Spacer(modifier = Modifier.height(8.dp))
 
                                     Text(
-                                        text = "Documento actual: ${currentDocument?.id ?: "Ninguno"}",
+                                        text = "Current document: ${currentDocument?.id ?: "None"}",
                                         style = MaterialTheme.typography.bodySmall
                                     )
 
@@ -345,7 +347,7 @@ fun ProcessingScreen(
                                         Spacer(modifier = Modifier.height(8.dp))
 
                                         Text(
-                                            text = "Texto extraído (${extractedText.length} caracteres):\n${extractedText.take(300)}...",
+                                            text = "Extracted text (${extractedText.length} characters):\n${extractedText.take(300)}...",
                                             style = MaterialTheme.typography.bodySmall
                                         )
                                     }
@@ -356,7 +358,7 @@ fun ProcessingScreen(
                 }
 
                 else -> {
-                    // Mostrar progreso
+                    // Show progress
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -364,7 +366,7 @@ fun ProcessingScreen(
                             .verticalScroll(rememberScrollState()),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Título animado con pulso
+                        // Animated title with pulse
                         Text(
                             text = processingStateText,
                             style = MaterialTheme.typography.titleLarge,
@@ -373,7 +375,7 @@ fun ProcessingScreen(
 
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        // Mostrar tiempo de procesamiento
+                        // Show processing time
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -384,11 +386,11 @@ fun ProcessingScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text(
-                                    text = String.format("Tiempo: %d segundos", elapsedTime),
+                                    text = String.format("Time: %d seconds", elapsedTime),
                                     style = MaterialTheme.typography.bodyMedium
                                 )
 
-                                // Barra de progreso circular con porcentaje
+                                // Circular progress with percentage
                                 Box(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier.padding(16.dp)
@@ -410,7 +412,7 @@ fun ProcessingScreen(
 
                         Spacer(modifier = Modifier.height(24.dp))
 
-                        // Barra de progreso
+                        // Progress bar
                         LinearProgressIndicator(
                             progress = progress,
                             modifier = Modifier.fillMaxWidth(),
@@ -420,7 +422,7 @@ fun ProcessingScreen(
 
                         Spacer(modifier = Modifier.height(32.dp))
 
-                        // Pasos del proceso con animación
+                        // Process steps with animation
                         ProcessStepCard(
                             number = 1,
                             title = stringResource(R.string.extracting_text),
@@ -451,7 +453,7 @@ fun ProcessingScreen(
 
                         Spacer(modifier = Modifier.height(24.dp))
 
-                        // Mostrar una parte del texto extraído
+                        // Show part of extracted text
                         if (extractedText.isNotEmpty() && currentStep >= 2) {
                             OutlinedButton(
                                 onClick = { showRawData = !showRawData },
@@ -462,13 +464,13 @@ fun ProcessingScreen(
                                     contentDescription = null
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text(if (showRawData) "Ocultar datos extraídos" else "Mostrar datos extraídos")
+                                Text(if (showRawData) "Hide extracted data" else "Show extracted data")
                             }
 
                             Spacer(modifier = Modifier.height(8.dp))
 
                             if (showRawData) {
-                                // Mostrar datos estructurados si hay
+                                // Show structured data if available
                                 if (structuredData.isNotEmpty()) {
                                     Card(
                                         modifier = Modifier.fillMaxWidth(),
@@ -478,13 +480,13 @@ fun ProcessingScreen(
                                     ) {
                                         Column(modifier = Modifier.padding(16.dp)) {
                                             Text(
-                                                text = "Datos estructurados detectados",
+                                                text = "Detected structured data",
                                                 style = MaterialTheme.typography.titleSmall
                                             )
 
                                             Spacer(modifier = Modifier.height(8.dp))
 
-                                            // Mostrar cada par clave-valor
+                                            // Show each key-value pair
                                             structuredData.entries.take(5).forEach { (key, value) ->
                                                 Row(
                                                     modifier = Modifier
@@ -509,10 +511,10 @@ fun ProcessingScreen(
                                                 Divider()
                                             }
 
-                                            // Si hay más de 5 elementos, mostrar un mensaje
+                                            // If there are more than 5 items, show a message
                                             if (structuredData.size > 5) {
                                                 Text(
-                                                    text = "Y ${structuredData.size - 5} campos más...",
+                                                    text = "And ${structuredData.size - 5} more fields...",
                                                     style = MaterialTheme.typography.bodySmall,
                                                     modifier = Modifier
                                                         .align(Alignment.End)
@@ -525,7 +527,7 @@ fun ProcessingScreen(
                                     Spacer(modifier = Modifier.height(16.dp))
                                 }
 
-                                // Texto extraído
+                                // Extracted text
                                 ElevatedCard(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
@@ -537,7 +539,7 @@ fun ProcessingScreen(
 
                                         Spacer(modifier = Modifier.height(8.dp))
 
-                                        // Mostrar solo una parte del texto
+                                        // Show only part of the text
                                         val previewText = if (extractedText.length > 200) {
                                             extractedText.substring(0, 200) + "..."
                                         } else extractedText
@@ -565,7 +567,7 @@ fun ProcessStepCard(
     isActive: Boolean,
     icon: androidx.compose.ui.graphics.vector.ImageVector
 ) {
-    // Animación para pulsar si está activo
+    // Animation to pulse if active
     val infiniteTransition = rememberInfiniteTransition(label = "stepAnimation")
     val scale = infiniteTransition.animateFloat(
         initialValue = if (isActive) 1f else 1.05f,
@@ -617,7 +619,7 @@ fun ProcessStepCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Círculo de número o icono de check
+            // Number circle or check icon
             Box(
                 modifier = Modifier
                     .size(40.dp)
@@ -644,7 +646,7 @@ fun ProcessStepCard(
 
             Spacer(modifier = Modifier.width(16.dp))
 
-            // Título e icono
+            // Title and icon
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -653,7 +655,7 @@ fun ProcessStepCard(
                 )
             }
 
-            // Icono de estado
+            // Status icon
             Icon(
                 imageVector = icon,
                 contentDescription = null,

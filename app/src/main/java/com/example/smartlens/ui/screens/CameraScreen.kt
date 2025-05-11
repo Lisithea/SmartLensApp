@@ -38,12 +38,15 @@ import androidx.navigation.NavController
 import com.example.smartlens.R
 import com.example.smartlens.model.DocumentProcessingState
 import com.example.smartlens.ui.components.LocalSnackbarManager
-import com.example.smartlens.ui.navigation.Screen
+import com.example.smartlens.ui.navigation.NavigationActions
 import com.example.smartlens.viewmodel.DocumentViewModel
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.Executor
+
+private const val TAG = "CameraScreen"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,23 +58,22 @@ fun CameraScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val snackbarManager = LocalSnackbarManager.current
     val coroutineScope = rememberCoroutineScope()
-    val TAG = "CameraScreen"
 
-    // Estados básicos
+    // Basic states
     var hasCameraPermission by remember { mutableStateOf(false) }
     var hasStoragePermission by remember { mutableStateOf(false) }
     var lastImageUri by remember { mutableStateOf<Uri?>(null) }
     var isTakingPicture by remember { mutableStateOf(false) }
     val processingState by viewModel.processingState.collectAsState()
 
-    // Configuración de captura de imagen
+    // Image capture configuration
     val imageCapture = remember {
         ImageCapture.Builder()
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
             .build()
     }
 
-    // Lanzadores para solicitar permisos
+    // Permission launchers
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { granted ->
@@ -101,18 +103,19 @@ fun CameraScreen(
                 lastImageUri = uri
                 coroutineScope.launch {
                     val tempUri = viewModel.saveTemporaryImage(uri)
-                    navigateToDocumentType(navController, tempUri.toString())
+                    NavigationActions.navigateToDocumentType(navController, tempUri.toString())
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error al procesar imagen de galería: ${e.message}", e)
+                Log.e(TAG, "Error processing gallery image: ${e.message}", e)
                 snackbarManager?.showError("Error: ${e.message}")
             }
         }
     }
 
-    // Solicitar permisos al inicio
+    // Request permissions at start
     LaunchedEffect(Unit) {
         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+
         val storagePermission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             Manifest.permission.READ_MEDIA_IMAGES
         } else {
@@ -121,7 +124,7 @@ fun CameraScreen(
         storagePermissionLauncher.launch(storagePermission)
     }
 
-    // UI principal
+    // Main UI
     Scaffold(
         topBar = {
             TopAppBar(
@@ -152,7 +155,7 @@ fun CameraScreen(
                 .padding(padding)
         ) {
             if (hasCameraPermission) {
-                // Vista previa de cámara
+                // Camera preview
                 AndroidView(
                     factory = { ctx ->
                         val previewView = PreviewView(ctx).apply {
@@ -179,8 +182,8 @@ fun CameraScreen(
                                     imageCapture
                                 )
                             } catch (e: Exception) {
-                                Log.e(TAG, "Error al inicializar cámara: ${e.message}", e)
-                                snackbarManager?.showError("Error al inicializar la cámara")
+                                Log.e(TAG, "Error initializing camera: ${e.message}", e)
+                                snackbarManager?.showError("Error initializing camera")
                             }
                         }, executor)
 
@@ -189,13 +192,13 @@ fun CameraScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Botón de captura
+                // Capture button
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 32.dp)
                 ) {
-                    // Botón circular de captura
+                    // Circular capture button
                     Box(
                         modifier = Modifier
                             .size(72.dp)
@@ -207,11 +210,12 @@ fun CameraScreen(
                                     takePhoto(
                                         context = context,
                                         imageCapture = imageCapture,
+                                        executor = ContextCompat.getMainExecutor(context),
                                         onSuccess = { uri ->
                                             isTakingPicture = false
                                             lastImageUri = uri
-                                            snackbarManager?.showSuccess("Imagen capturada")
-                                            navigateToDocumentType(navController, uri.toString())
+                                            snackbarManager?.showSuccess("Image captured")
+                                            NavigationActions.navigateToDocumentType(navController, uri.toString())
                                         },
                                         onError = { error ->
                                             isTakingPicture = false
@@ -224,14 +228,14 @@ fun CameraScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.CameraAlt,
-                            contentDescription = "Capturar",
+                            contentDescription = "Capture",
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.size(36.dp)
                         )
                     }
                 }
 
-                // Indicador de carga
+                // Loading indicator
                 if (isTakingPicture) {
                     Box(
                         modifier = Modifier
@@ -246,13 +250,13 @@ fun CameraScreen(
                             ) {
                                 CircularProgressIndicator()
                                 Spacer(modifier = Modifier.height(16.dp))
-                                Text("Procesando imagen...")
+                                Text("Processing image...")
                             }
                         }
                     }
                 }
             } else {
-                // Sin permiso de cámara - mostrar mensaje
+                // No camera permission - show message
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -292,7 +296,7 @@ fun CameraScreen(
                 }
             }
 
-            // Miniatura del último documento
+            // Thumbnail of the last document
             lastImageUri?.let { uri ->
                 Box(
                     modifier = Modifier
@@ -305,15 +309,15 @@ fun CameraScreen(
                             .clickable {
                                 if (processingState is DocumentProcessingState.DocumentReady) {
                                     val document = (processingState as DocumentProcessingState.DocumentReady).document
-                                    navController.navigate("${Screen.DocumentDetails.route}/${document.id}")
+                                    NavigationActions.navigateToDocumentDetails(navController, document.id)
                                 } else {
-                                    navigateToDocumentType(navController, uri.toString())
+                                    NavigationActions.navigateToDocumentType(navController, uri.toString())
                                 }
                             }
                     ) {
                         Image(
                             modifier = Modifier.fillMaxSize(),
-                            contentDescription = "Último documento",
+                            contentDescription = "Last document",
                             contentScale = ContentScale.Crop,
                             painter = painterResource(id = R.drawable.ic_launcher_foreground)
                         )
@@ -324,49 +328,42 @@ fun CameraScreen(
     }
 }
 
-// Función para tomar una foto - ahora completamente separada de los Composables
+/**
+ * Take a photo - completely separated from Composables
+ */
 private fun takePhoto(
     context: android.content.Context,
     imageCapture: ImageCapture,
+    executor: Executor,
     onSuccess: (Uri) -> Unit,
     onError: (String) -> Unit
 ) {
-    Log.d("CameraScreen", "Iniciando captura de foto")
+    Log.d(TAG, "Starting photo capture")
 
-    // Crear archivo para guardar la foto
+    // Create file to save photo
     val photoFile = File(
         context.getExternalFilesDir(Environment.DIRECTORY_PICTURES),
         "SmartLens_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.jpg"
     )
 
-    // Configurar opciones de salida
+    // Configure output options
     val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
 
-    // Capturar la imagen
+    // Capture the image
     imageCapture.takePicture(
         outputOptions,
-        ContextCompat.getMainExecutor(context),
+        executor,
         object : ImageCapture.OnImageSavedCallback {
             override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                 val savedUri = Uri.fromFile(photoFile)
-                Log.d("CameraScreen", "Imagen guardada exitosamente en: $savedUri")
+                Log.d(TAG, "Image successfully saved to: $savedUri")
                 onSuccess(savedUri)
             }
 
             override fun onError(exception: ImageCaptureException) {
-                Log.e("CameraScreen", "Error al capturar: ${exception.message}", exception)
-                onError(exception.message ?: "Error desconocido")
+                Log.e(TAG, "Error capturing: ${exception.message}", exception)
+                onError(exception.message ?: "Unknown error")
             }
         }
     )
-}
-
-// Función para navegar a la pantalla de selección de tipo de documento
-private fun navigateToDocumentType(navController: NavController, uriString: String) {
-    try {
-        Log.d("CameraScreen", "Navegando a DocumentTypeScreen con URI: $uriString")
-        navController.navigate(Screen.DocumentType.createRoute(uriString))
-    } catch (e: Exception) {
-        Log.e("CameraScreen", "Error al navegar: ${e.message}", e)
-    }
 }
