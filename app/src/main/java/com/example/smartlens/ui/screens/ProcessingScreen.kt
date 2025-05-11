@@ -113,7 +113,7 @@ fun ProcessingScreen(
     // Start processing if not already in progress or completed
     LaunchedEffect(key1 = imageUri, key2 = documentType) {
         if (!isProcessingCompleted && !hasTriedProcessing) {
-            Log.d(TAG, "⚠️ Starting processing. State: $processingState, Type: $documentType")
+            Log.d(TAG, "⚠️ Starting processing. State: $processingState, Type: $documentType, Image: $imageUri")
             hasError = false
             processing = true
             hasTriedProcessing = true
@@ -125,7 +125,11 @@ fun ProcessingScreen(
                 currentStep = 1
                 progress = 0.2f
 
-                // Start document processing
+                // Save temporary image first to ensure it's available
+                val tempImageUri = viewModel.saveTemporaryImage(imageUri)
+
+                // Start document processing with the temporary URI
+                viewModel.setProcessedImageUri(tempImageUri)
                 viewModel.processDocument(documentType)
             } catch (e: Exception) {
                 Log.e(TAG, "Error starting processing: ${e.message}", e)
@@ -193,7 +197,7 @@ fun ProcessingScreen(
                 hasError = true
                 errorMessage = error
                 processing = false // Stop the time counter
-                snackbarManager?.showError("Error: $errorMessage")
+                snackbarManager?.showError("Error: $error")
             }
             else -> {
                 // Other states
@@ -267,15 +271,20 @@ fun ProcessingScreen(
                         ) {
                             Button(
                                 onClick = {
+                                    // Reset state
                                     hasError = false
                                     processing = true
                                     elapsedTime = 0
                                     currentStep = 1
                                     progress = 0.05f
+                                    hasTriedProcessing = false
 
                                     // Restart processing
                                     coroutineScope.launch {
                                         try {
+                                            // Try to save the URI again first
+                                            val tempImageUri = viewModel.saveTemporaryImage(imageUri)
+                                            viewModel.setProcessedImageUri(tempImageUri)
                                             viewModel.processDocument(documentType)
                                         } catch (e: Exception) {
                                             hasError = true

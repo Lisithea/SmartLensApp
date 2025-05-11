@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import android.content.Context
@@ -97,6 +98,16 @@ class DocumentViewModel @Inject constructor(
     }
 
     /**
+     * Establece explícitamente la URI de la imagen procesada
+     * Este método es crucial para mantener la referencia a la imagen
+     */
+    fun setProcessedImageUri(uri: Uri) {
+        _processedImageUri.value = uri
+        tempImageUri = uri
+        Log.d(TAG, "URI de imagen procesada establecida: $uri")
+    }
+
+    /**
      * Establece un nombre personalizado para exportación
      */
     fun setCustomFileName(name: String) {
@@ -109,14 +120,18 @@ class DocumentViewModel @Inject constructor(
      */
     fun loadRecentDocuments() {
         viewModelScope.launch {
-            repository.getAllDocuments()
-                .catch { e ->
-                    Log.e(TAG, "Error al cargar documentos: ${e.message}", e)
-                    _userMessage.value = context.getString(R.string.loading_error)
-                }
-                .collect { documents ->
-                    _recentDocuments.value = documents.sortedByDescending { it.timestamp }
-                }
+            try {
+                repository.getAllDocuments()
+                    .catch { e ->
+                        Log.e(TAG, "Error al cargar documentos: ${e.message}", e)
+                        _userMessage.value = context.getString(R.string.loading_error)
+                    }
+                    .collect { documents ->
+                        _recentDocuments.value = documents.sortedByDescending { doc -> doc.timestamp }
+                    }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error en loadRecentDocuments: ${e.message}", e)
+            }
         }
     }
 
@@ -210,6 +225,7 @@ class DocumentViewModel @Inject constructor(
                 // Fase 1: Procesar la imagen con Computer Vision
                 val enhancedImageUri = imageProcessingService.enhanceImageWithComputerVision(imageUri)
                 _processedImageUri.value = enhancedImageUri
+                tempImageUri = enhancedImageUri
                 Log.d(TAG, "Imagen mejorada con CV: $enhancedImageUri")
 
                 // Fase 2: Extraer texto con OCR de la imagen mejorada
