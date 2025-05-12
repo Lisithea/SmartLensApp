@@ -142,10 +142,8 @@ class ExcelExportService @Inject constructor(
         createRow(sheet, rowNum++, "IVA:", invoice.taxAmount.toString())
         createRow(sheet, rowNum++, "TOTAL:", invoice.totalAmount.toString())
 
-        // Autoajustar columnas
-        for (i in 0..5) {
-            sheet.autoSizeColumn(i)
-        }
+        // Establecer ancho de columnas sin usar autoSizeColumn (que depende de java.awt)
+        setFixedColumnWidths(sheet)
     }
 
     /**
@@ -241,10 +239,8 @@ class ExcelExportService @Inject constructor(
             createRow(sheet, rowNum++, "", it)
         }
 
-        // Autoajustar columnas
-        for (i in 0..4) {
-            sheet.autoSizeColumn(i)
-        }
+        // Establecer ancho de columnas con valores fijos
+        setFixedColumnWidths(sheet)
     }
 
     /**
@@ -286,9 +282,9 @@ class ExcelExportService @Inject constructor(
             createRow(sheet, rowNum++, "Código de Barras:", it)
         }
 
-        // Autoajustar columnas
-        sheet.autoSizeColumn(0)
-        sheet.autoSizeColumn(1)
+        // Establecer ancho de columnas con valores fijos
+        sheet.setColumnWidth(0, 20 * 256) // Aproximadamente 20 caracteres
+        sheet.setColumnWidth(1, 30 * 256) // Aproximadamente 30 caracteres
     }
 
     /**
@@ -308,6 +304,31 @@ class ExcelExportService @Inject constructor(
         val row = sheet.createRow(rowNum)
         row.createCell(0).setCellValue(label)
         row.createCell(1).setCellValue(value)
+    }
+
+    /**
+     * Establece anchos fijos para las columnas en lugar de usar autoSizeColumn
+     * que depende de java.awt (no disponible en Android)
+     */
+    private fun setFixedColumnWidths(sheet: org.apache.poi.ss.usermodel.Sheet) {
+        // Establecer anchos predeterminados para las columnas comunes
+        // Multiplicamos por 256 porque POI mide el ancho en unidades de 1/256 de carácter
+        sheet.setColumnWidth(0, 15 * 256) // Etiqueta o código - 15 caracteres
+        sheet.setColumnWidth(1, 40 * 256) // Descripción - 40 caracteres
+        sheet.setColumnWidth(2, 10 * 256) // Cantidad - 10 caracteres
+
+        // Si hay más columnas, establecer anchos adicionales
+        if (sheet.getRow(0)?.lastCellNum ?: 0 > 3) {
+            sheet.setColumnWidth(3, 15 * 256) // Precio, etc - 15 caracteres
+        }
+
+        if (sheet.getRow(0)?.lastCellNum ?: 0 > 4) {
+            sheet.setColumnWidth(4, 10 * 256) // IVA, etc - 10 caracteres
+        }
+
+        if (sheet.getRow(0)?.lastCellNum ?: 0 > 5) {
+            sheet.setColumnWidth(5, 15 * 256) // Total, etc - 15 caracteres
+        }
     }
 
     /**
