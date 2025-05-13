@@ -1,8 +1,8 @@
 package com.example.smartlens.service
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.net.Uri
+import android.util.Log
 import com.example.smartlens.model.*
 import com.google.ai.client.generativeai.GenerativeModel
 import com.google.ai.client.generativeai.type.content
@@ -12,88 +12,37 @@ import kotlinx.coroutines.withContext
 import com.google.gson.Gson
 import javax.inject.Inject
 import javax.inject.Singleton
-import android.util.Log
 
 /**
- * Servicio para procesar documentos con Gemini AI
- * Versión mejorada con mejor manejo de errores y diagnósticos
+ * Extensión del servicio de Gemini con métodos mejorados para procesamiento de documentos
+ * basado en el servicio existente pero con soporte para prompts personalizados y tipos adicionales
  */
 @Singleton
-class GeminiService @Inject constructor(
+class EnhancedGeminiService @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val gson: Gson
+    private val gson: Gson,
+    private val geminiService: GeminiService
 ) {
-    private val TAG = "GeminiService"
-    private val preferences: SharedPreferences = context.getSharedPreferences("smartlens_settings", Context.MODE_PRIVATE)
-
-    // Obtener API Key de las preferencias
-    fun getApiKey(): String {
-        val apiKey = preferences.getString("api_key", "") ?: ""
-        Log.d(TAG, "Obteniendo API Key: ${if (apiKey.isBlank()) "No configurada" else "Configurada (${apiKey.length} caracteres)"}")
-        return apiKey
-    }
-
-    // Guardar API Key en las preferencias
-    fun saveApiKey(key: String) {
-        preferences.edit().putString("api_key", key).apply()
-        Log.d(TAG, "API Key guardada: ${if (key.isBlank()) "Vacía" else "${key.length} caracteres"}")
-    }
+    private val TAG = "EnhancedGeminiService"
 
     /**
-     * Verifica si una API Key es válida
-     * @return true si la API Key es válida
+     * Procesa una factura con IA usando un prompt personalizado
      */
-    suspend fun verifyApiKey(apiKey: String): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        if (apiKey.isBlank()) {
-            return@withContext Pair(false, "API Key no proporcionada")
-        }
-
-        // Comprobar si es modo de prueba
-        if (apiKey == "TEST_MODE_API_KEY") {
-            return@withContext Pair(true, "Modo prueba")
-        }
-
-        try {
-            // Crear modelo generativo con la API Key proporcionada
-            val generativeModel = GenerativeModel(
-                modelName = "gemini-1.5-pro",
-                apiKey = apiKey
-            )
-
-            // Realizar una consulta simple para verificar
-            val prompt = "Responde con 'OK' si esta API Key es válida."
-            val inputContent = content { text(prompt) }
-            val response = generativeModel.generateContent(inputContent)
-
-            // Si llegamos aquí sin excepción, la clave es válida
-            return@withContext Pair(true, "")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error al verificar API Key: ${e.message}", e)
-            // Determinar la razón del error
-            val reason = when {
-                e.message?.contains("invalid api key", ignoreCase = true) == true -> "API Key no válida"
-                e.message?.contains("quota", ignoreCase = true) == true -> "Cuota excedida"
-                e.message?.contains("permission", ignoreCase = true) == true -> "Permisos insuficientes"
-                e.message?.contains("network", ignoreCase = true) == true -> "Error de red"
-                else -> "Error de validación: ${e.message}"
-            }
-            return@withContext Pair(false, reason)
-        }
-    }
-
-    /**
-     * Procesa una factura con IA
-     */
-    suspend fun processInvoice(text: String, imageUri: Uri?): Invoice = withContext(Dispatchers.IO) {
-        val apiKey = getApiKey()
+    suspend fun processInvoiceWithCustomPrompt(
+        text: String,
+        imageUri: Uri,
+        customPrompt: String? = null
+    ): Invoice = withContext(Dispatchers.IO) {
+        val apiKey = geminiService.getApiKey()
         if (apiKey.isBlank()) {
             Log.e(TAG, "Error: API Key de Gemini no configurada")
             throw IllegalStateException("API Key de Gemini no configurada. Por favor, configure la API Key en Ajustes.")
         }
 
-        Log.d(TAG, "Procesando factura con Gemini. Texto: ${text.take(100)}... (${text.length} caracteres)")
+        Log.d(TAG, "Procesando factura con prompt personalizado. Texto: ${text.take(100)}... (${text.length} caracteres)")
 
-        val prompt = """
+        // Usar el prompt personalizado si se proporciona, o el estándar en caso contrario
+        val prompt = customPrompt ?: """
             Analiza el siguiente texto OCR de una factura y extrae los datos estructurados.
             
             Texto OCR:
@@ -180,7 +129,7 @@ class GeminiService @Inject constructor(
 
             // Convertir a modelo Invoice
             return@withContext Invoice(
-                imageUri = imageUri ?: Uri.EMPTY,
+                imageUri = imageUri,
                 rawTextContent = text,
                 invoiceNumber = invoiceData.invoiceNumber,
                 date = invoiceData.date,
@@ -221,18 +170,23 @@ class GeminiService @Inject constructor(
     }
 
     /**
-     * Procesa un albarán con IA
+     * Procesa un albarán/nota de entrega con IA usando un prompt personalizado
      */
-    suspend fun processDeliveryNote(text: String, imageUri: Uri?): DeliveryNote = withContext(Dispatchers.IO) {
-        val apiKey = getApiKey()
+    suspend fun processDeliveryNoteWithCustomPrompt(
+        text: String,
+        imageUri: Uri,
+        customPrompt: String? = null
+    ): DeliveryNote = withContext(Dispatchers.IO) {
+        val apiKey = geminiService.getApiKey()
         if (apiKey.isBlank()) {
             Log.e(TAG, "Error: API Key de Gemini no configurada")
             throw IllegalStateException("API Key de Gemini no configurada. Por favor, configure la API Key en Ajustes.")
         }
 
-        Log.d(TAG, "Procesando albarán con Gemini. Texto: ${text.take(100)}...")
+        Log.d(TAG, "Procesando albarán con prompt personalizado. Texto: ${text.take(100)}...")
 
-        val prompt = """
+        // Usar el prompt personalizado si se proporciona, o el estándar en caso contrario
+        val prompt = customPrompt ?: """
             Analiza el siguiente texto OCR de un albarán o nota de entrega y extrae los datos estructurados.
             
             Texto OCR:
@@ -313,7 +267,7 @@ class GeminiService @Inject constructor(
 
             // Convertir a modelo DeliveryNote
             return@withContext DeliveryNote(
-                imageUri = imageUri ?: Uri.EMPTY,
+                imageUri = imageUri,
                 rawTextContent = text,
                 deliveryNoteNumber = deliveryData.deliveryNoteNumber,
                 date = deliveryData.date,
@@ -350,18 +304,23 @@ class GeminiService @Inject constructor(
     }
 
     /**
-     * Procesa una etiqueta de almacén con IA
+     * Procesa una etiqueta de almacén con IA usando un prompt personalizado
      */
-    suspend fun processWarehouseLabel(text: String, imageUri: Uri?): WarehouseLabel = withContext(Dispatchers.IO) {
-        val apiKey = getApiKey()
+    suspend fun processWarehouseLabelWithCustomPrompt(
+        text: String,
+        imageUri: Uri,
+        customPrompt: String? = null
+    ): WarehouseLabel = withContext(Dispatchers.IO) {
+        val apiKey = geminiService.getApiKey()
         if (apiKey.isBlank()) {
             Log.e(TAG, "Error: API Key de Gemini no configurada")
             throw IllegalStateException("API Key de Gemini no configurada. Por favor, configure la API Key en Ajustes.")
         }
 
-        Log.d(TAG, "Procesando etiqueta con Gemini. Texto: ${text.take(100)}...")
+        Log.d(TAG, "Procesando etiqueta con prompt personalizado. Texto: ${text.take(100)}...")
 
-        val prompt = """
+        // Usar el prompt personalizado si se proporciona, o el estándar en caso contrario
+        val prompt = customPrompt ?: """
             Analiza el siguiente texto OCR de una etiqueta de almacén o producto y extrae los datos estructurados.
             
             Texto OCR:
@@ -440,7 +399,7 @@ class GeminiService @Inject constructor(
 
             // Convertir a modelo WarehouseLabel
             return@withContext WarehouseLabel(
-                imageUri = imageUri ?: Uri.EMPTY,
+                imageUri = imageUri,
                 rawTextContent = text,
                 labelId = labelData.labelId,
                 productCode = labelData.productCode,
@@ -454,6 +413,54 @@ class GeminiService @Inject constructor(
         } catch (e: Exception) {
             Log.e(TAG, "Error al procesar etiqueta con Gemini: ${e.message}", e)
             throw IllegalStateException("Error al procesar etiqueta: ${e.message}")
+        }
+    }
+
+    /**
+     * Procesa un documento de tipo genérico basado en el texto y el tipo detectado
+     */
+    suspend fun processGenericDocument(
+        text: String,
+        imageUri: Uri,
+        specificType: String
+    ): LogisticsDocument = withContext(Dispatchers.IO) {
+        try {
+            Log.d(TAG, "Procesando documento genérico de tipo: $specificType")
+
+            // Determinar el tipo de documento y delegate al método correspondiente
+            when {
+                specificType.contains("Factura") ||
+                        specificType.contains("Boleta") ||
+                        specificType.contains("Recibo") ||
+                        specificType.contains("Nota de Crédito") ||
+                        specificType.contains("Cotización") ||
+                        specificType.contains("Orden de Compra") ||
+                        specificType.contains("Liquidación") ||
+                        specificType.contains("Cheque") ||
+                        specificType.contains("Cartola") -> {
+                    return@withContext processInvoiceWithCustomPrompt(text, imageUri)
+                }
+
+                specificType.contains("Guía") ||
+                        specificType.contains("Despacho") ||
+                        specificType.contains("Transporte") -> {
+                    return@withContext processDeliveryNoteWithCustomPrompt(text, imageUri)
+                }
+
+                specificType.contains("Etiqueta") ||
+                        specificType.contains("Bodega") -> {
+                    return@withContext processWarehouseLabelWithCustomPrompt(text, imageUri)
+                }
+
+                // Por defecto, procesar como factura
+                else -> {
+                    Log.d(TAG, "Tipo específico no reconocido, procesando como factura genérica")
+                    return@withContext processInvoiceWithCustomPrompt(text, imageUri)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error al procesar documento genérico: ${e.message}", e)
+            throw IllegalStateException("Error al procesar documento genérico: ${e.message}")
         }
     }
 
