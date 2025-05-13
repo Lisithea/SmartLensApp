@@ -1,24 +1,33 @@
 package com.example.smartlens.ui.screens
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
+import com.example.smartlens.R
 import com.example.smartlens.ui.components.LocalSnackbarManager
+import com.example.smartlens.ui.navigation.navigateToAdvancedDiagnostic
 import com.example.smartlens.util.OcrTester
 import com.example.smartlens.viewmodel.DocumentViewModel
 import kotlinx.coroutines.launch
@@ -27,12 +36,15 @@ import kotlinx.coroutines.launch
 @Composable
 fun DiagnosticScreen(
     navController: NavController,
-    ocrTester: OcrTester,
     viewModel: DocumentViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val snackbarManager = LocalSnackbarManager.current
     val coroutineScope = rememberCoroutineScope()
+
+    // Para obtener una instancia de OcrTester, se recomienda mover esta lógica al ViewModel
+    // o usar un DI adecuado. Esto es solo para mantener la compatibilidad con el código existente.
+    val ocrTester = remember { OcrTester(context, viewModel.getOcrService()) }
 
     var isLoading by remember { mutableStateOf(false) }
     var testResults by remember { mutableStateOf("") }
@@ -94,6 +106,59 @@ fun DiagnosticScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Nuevo banner para diagnóstico avanzado
+            ElevatedCard(
+                onClick = { navController.navigateToAdvancedDiagnostic() },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.BugReport,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(40.dp)
+                    )
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Diagnóstico Avanzado",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+
+                        Text(
+                            text = "Análisis detallado con clasificación automática de documentos",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Icon(
+                        imageVector = Icons.Default.ArrowForward,
+                        contentDescription = "Ir a diagnóstico avanzado"
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Divider()
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Diagnóstico Básico",
+                style = MaterialTheme.typography.titleLarge
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             Icon(
                 imageVector = Icons.Default.BugReport,
                 contentDescription = null,
